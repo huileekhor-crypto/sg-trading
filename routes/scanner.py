@@ -107,12 +107,15 @@ def get_market_scan():
             "and 4-6 key economic events today. Use real current numbers."
         )
 
-        msg1 = ac.messages.create(
-            model="claude-haiku-4-5-20251001",
-            max_tokens=2000,
-            tools=[{"type": "web_search_20250305", "name": "web_search", "max_uses": 3}],
-            messages=[{"role": "user", "content": research_prompt}]
-        )
+        try:
+            msg1 = ac.messages.create(
+                model="claude-haiku-4-5-20251001",
+                max_tokens=2000,
+                tools=[{"type": "web_search_20250305", "name": "web_search", "max_uses": 3}],
+                messages=[{"role": "user", "content": research_prompt}]
+            )
+        except Exception as e:
+            return jsonify({"error": f"call1_research: {e}"}), 500
 
         research = "".join(
             block.text for block in msg1.content if hasattr(block, 'text')
@@ -122,22 +125,24 @@ def get_market_scan():
             return jsonify({"error": "No market data returned from research"}), 500
 
         # ── Call 2: force structured output via tool_use ──────────────────
-        # Use Sonnet here — Haiku produces malformed JSON in tool inputs even
-        # under tool_choice, causing the SDK's own parser to crash.
-        # Call 2 is cheap (no web search, ~1-2k input tokens) so Sonnet is fine.
-        msg2 = ac.messages.create(
-            model="claude-sonnet-4-6",
-            max_tokens=2000,
-            tools=[_REPORT_TOOL],
-            tool_choice={"type": "tool", "name": "submit_market_report"},
-            messages=[{
-                "role": "user",
-                "content": (
-                    f"Based on this market research, call submit_market_report "
-                    f"with all fields populated:\n\n{research}"
-                )
-            }]
-        )
+        # Sonnet used here — Haiku produces malformed tool_use JSON that crashes
+        # the SDK parser even under tool_choice.
+        try:
+            msg2 = ac.messages.create(
+                model="claude-sonnet-4-6",
+                max_tokens=2000,
+                tools=[_REPORT_TOOL],
+                tool_choice={"type": "tool", "name": "submit_market_report"},
+                messages=[{
+                    "role": "user",
+                    "content": (
+                        f"Based on this market research, call submit_market_report "
+                        f"with all fields populated:\n\n{research}"
+                    )
+                }]
+            )
+        except Exception as e:
+            return jsonify({"error": f"call2_structure: {e}"}), 500
 
         data = None
         for block in msg2.content:
@@ -157,6 +162,12 @@ def get_market_scan():
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+
+@scanner_bp.route('/scanner/version', methods=['GET'])
+def scanner_version():
+    import anthropic as _ac
+    return jsonify({"scanner_version": "two-call-v2", "anthropic_sdk": _ac.__version__})
 
 
 @scanner_bp.route('/scanner/last', methods=['GET'])
