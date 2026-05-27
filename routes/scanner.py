@@ -122,10 +122,11 @@ def get_market_scan():
             return jsonify({"error": "No market data returned from research"}), 500
 
         # ── Call 2: force structured output via tool_use ──────────────────
-        # tool_choice guarantees the model calls submit_market_report,
-        # so block.input is already a valid Python dict — zero JSON parsing.
+        # Use Sonnet here — Haiku produces malformed JSON in tool inputs even
+        # under tool_choice, causing the SDK's own parser to crash.
+        # Call 2 is cheap (no web search, ~1-2k input tokens) so Sonnet is fine.
         msg2 = ac.messages.create(
-            model="claude-haiku-4-5-20251001",
+            model="claude-sonnet-4-6",
             max_tokens=2000,
             tools=[_REPORT_TOOL],
             tool_choice={"type": "tool", "name": "submit_market_report"},
