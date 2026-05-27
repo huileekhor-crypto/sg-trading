@@ -1,6 +1,7 @@
 from flask import Blueprint, request, jsonify
 import finnhub
 import anthropic
+import yfinance as yf
 from config import Config
 from datetime import datetime, timedelta
 
@@ -11,6 +12,23 @@ def get_finnhub_client():
 
 def get_anthropic_client():
     return anthropic.Anthropic(api_key=Config.ANTHROPIC_API_KEY)
+
+def get_ohlcv(ticker, days=120):
+    """Fetch OHLCV history via yfinance (free, no API key needed)."""
+    end   = datetime.now()
+    start = end - timedelta(days=days)
+    df = yf.download(ticker, start=start.strftime('%Y-%m-%d'),
+                     end=end.strftime('%Y-%m-%d'), progress=False, auto_adjust=True)
+    if df.empty:
+        return None
+    return {
+        'c': df['Close'].tolist(),
+        'h': df['High'].tolist(),
+        'l': df['Low'].tolist(),
+        'o': df['Open'].tolist(),
+        'v': df['Volume'].tolist(),
+        't': [int(ts.timestamp()) for ts in df.index.to_pydatetime()],
+    }
 
 def calculate_ema(prices, period):
     if len(prices) < period:
@@ -141,11 +159,9 @@ def analyse_ticker(ticker):
         company_name = profile.get('name', ticker) if profile else ticker
         sector   = profile.get('finnhubIndustry', 'Unknown') if profile else 'Unknown'
 
-        end   = int(datetime.now().timestamp())
-        start = int((datetime.now() - timedelta(days=120)).timestamp())
-        candles = fc.stock_candles(ticker, 'D', start, end)
+        candles = get_ohlcv(ticker)
 
-        if not candles or candles.get('s') == 'no_data':
+        if not candles:
             return jsonify({"error": f"No price data found for {ticker}"}), 404
 
         closes  = candles['c']

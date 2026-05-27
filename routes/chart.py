@@ -1,12 +1,26 @@
 from flask import Blueprint, request, jsonify
-import finnhub
+import yfinance as yf
 from config import Config
 from datetime import datetime, timedelta
 
 chart_bp = Blueprint('chart', __name__)
 
-def get_finnhub_client():
-    return finnhub.Client(api_key=Config.FINNHUB_API_KEY)
+def get_ohlcv(ticker, days=120):
+    """Fetch OHLCV history via yfinance (free, no API key needed)."""
+    end   = datetime.now()
+    start = end - timedelta(days=days)
+    df = yf.download(ticker, start=start.strftime('%Y-%m-%d'),
+                     end=end.strftime('%Y-%m-%d'), progress=False, auto_adjust=True)
+    if df.empty:
+        return None
+    return {
+        'c': df['Close'].tolist(),
+        'h': df['High'].tolist(),
+        'l': df['Low'].tolist(),
+        'o': df['Open'].tolist(),
+        'v': df['Volume'].tolist(),
+        't': [int(ts.timestamp()) for ts in df.index.to_pydatetime()],
+    }
 
 def calculate_ema(prices, period):
     if len(prices) < period:
@@ -123,34 +137,25 @@ def find_resistance(highs, closes, lookback=30):
 @chart_bp.route('/chart/<ticker>', methods=['GET'])
 def get_chart_data(ticker):
     ticker = ticker.upper().strip()
-    if not Config.FINNHUB_API_KEY:
-        return jsonify({"error": "FINNHUB_API_KEY not configured"}), 500
 
     try:
-        fc = get_finnhub_client()
-        
-        end   = int(datetime.now().timestamp())
-        start = int((datetime.now() - timedelta(days=120)).timestamp())
-        candles = fc.stock_candles(ticker, 'D', start, end)
+        candles = get_ohlcv(ticker)
 
-        if not candles or candles.get('s') == 'no_data':
+        if not candles:
             return jsonify({"error": f"No chart data for {ticker}"}), 404
 
-        closes    = candles['c']
-        highs     = candles['h']
-        lows      = candles['l']
-        opens     = candles['o']
-        volumes   = candles['v']
-        timestamps = candles['t']
+        full_closes = candles['c']
+        full_highs  = candles['h']
+        full_vols   = candles['v']
 
         # Take last 60 days for display
-        n = min(60, len(closes))
-        closes    = closes[-n:]
-        highs     = highs[-n:]
-        lows      = lows[-n:]
-        opens     = opens[-n:]
-        volumes   = volumes[-n:]
-        timestamps = timestamps[-n:]
+        n = min(60, len(full_closes))
+        closes     = full_closes[-n:]
+        highs      = full_highs[-n:]
+        lows       = candles['l'][-n:]
+        opens      = candles['o'][-n:]
+        volumes    = full_vols[-n:]
+        timestamps = candles['t'][-n:]
 
         dates = [datetime.fromtimestamp(t).strftime('%b %d') for t in timestamps]
 
@@ -166,10 +171,7 @@ def get_chart_data(ticker):
         signal_line= signal_line[-n:]
         histogram  = histogram[-n:]
 
-        # Pre-breakout detection
-        full_closes = candles['c'] if len(candles['c']) > n else closes
-        full_highs  = candles['h'] if len(candles['h']) > n else highs
-        full_vols   = candles['v'] if len(candles['v']) > n else volumes
+        # Pre-breakout detection (uses full 120-day history)
         
         full_bb_upper, _, full_bb_lower = calculate_bollinger_series(full_closes)
         full_bb_mid = [(u+l)/2 if u and l else None for u,l in zip(full_bb_upper, full_bb_lower)]
