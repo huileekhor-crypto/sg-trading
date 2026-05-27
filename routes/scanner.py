@@ -4,6 +4,48 @@ import finnhub
 from config import Config
 from datetime import datetime
 import json
+import re
+
+
+def _sanitize_llm_json(raw: str) -> str | None:
+    """Strip markdown fences and fix common LLM JSON artifacts."""
+    # Strip markdown code fences
+    raw = re.sub(r'```(?:json)?\s*', '', raw).replace('```', '')
+
+    # Find outermost JSON object
+    match = re.search(r'\{[\s\S]*\}', raw)
+    if not match:
+        return None
+    s = match.group(0)
+
+    # Fix literal newlines / tabs inside string values (char-by-char scan)
+    out, in_str, i = [], False, 0
+    while i < len(s):
+        c = s[i]
+        if c == '\\' and in_str:          # already-escaped sequence
+            out.append(c)
+            i += 1
+            if i < len(s):
+                out.append(s[i])
+            i += 1
+            continue
+        if c == '"':
+            in_str = not in_str
+            out.append(c)
+        elif in_str and c == '\n':
+            out.append('\\n')
+        elif in_str and c == '\r':
+            out.append('\\r')
+        elif in_str and c == '\t':
+            out.append('\\t')
+        else:
+            out.append(c)
+        i += 1
+    s = ''.join(out)
+
+    # Remove trailing commas before } or ]
+    s = re.sub(r',\s*([}\]])', r'\1', s)
+    return s
 
 scanner_bp = Blueprint('scanner', __name__)
 
@@ -91,16 +133,10 @@ Rules:
             if hasattr(block, 'text'):
                 raw_text += block.text
 
-        # Parse JSON - strip markdown fences then find outermost object
-        import re
-        clean = re.sub(r'```(?:json)?\s*', '', raw_text).replace('```', '')
-        match = re.search(r'\{[\s\S]*\}', clean)
-        if not match:
-            return jsonify({"error": "Could not parse market data"}), 500
-
-        json_str = match.group(0)
-        # Remove trailing commas before } or ] (common LLM output artifact)
-        json_str = re.sub(r',\s*([}\]])', r'\1', json_str)
+        # Parse JSON
+        json_str = _sanitize_llm_json(raw_text)
+        if not json_str:
+            return jsonify({"error": "Could not parse market data", "raw": raw_text[:500]}), 500
 
         data = json.loads(json_str)
         data['timestamp']  = datetime.now().isoformat()
