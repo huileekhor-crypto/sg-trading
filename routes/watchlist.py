@@ -3,7 +3,6 @@ import anthropic
 import finnhub
 from config import Config
 from datetime import datetime
-import json, re
 
 watchlist_bp = Blueprint('watchlist', __name__)
 
@@ -11,11 +10,43 @@ watchlist_bp = Blueprint('watchlist', __name__)
 # Structure: { user_id: { "user": [...], "ai": [...], "ai_updated": "..." } }
 watchlist_store = {}
 
+_WATCHLIST_TOOL = {
+    "name": "submit_watchlist",
+    "description": "Submit the final structured AI watchlist",
+    "input_schema": {
+        "type": "object",
+        "required": ["theme", "stocks", "market_note"],
+        "properties": {
+            "theme":       {"type": "string"},
+            "market_note": {"type": "string"},
+            "stocks": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "ticker":   {"type": "string"},
+                        "company":  {"type": "string"},
+                        "sector":   {"type": "string"},
+                        "why":      {"type": "string"},
+                        "setup":    {"type": "string"},
+                        "risk":     {"type": "string"},
+                        "catalyst": {"type": "string"},
+                        "learn":    {"type": "string"}
+                    }
+                }
+            }
+        }
+    }
+}
+
+
 def get_finnhub_client():
     return finnhub.Client(api_key=Config.FINNHUB_API_KEY)
 
+
 def get_anthropic_client():
     return anthropic.Anthropic(api_key=Config.ANTHROPIC_API_KEY)
+
 
 # ===== USER WATCHLIST =====
 
@@ -40,10 +71,7 @@ def add_to_watchlist():
     if ticker not in watchlist_store[user_id]["user"]:
         watchlist_store[user_id]["user"].append(ticker)
 
-    return jsonify({
-        "success": True,
-        "watchlist": watchlist_store[user_id]["user"]
-    })
+    return jsonify({"success": True, "watchlist": watchlist_store[user_id]["user"]})
 
 @watchlist_bp.route('/watchlist/remove', methods=['POST'])
 def remove_from_watchlist():
@@ -59,88 +87,88 @@ def remove_from_watchlist():
         "watchlist": watchlist_store.get(user_id, {}).get("user", [])
     })
 
+
 # ===== AI WATCHLIST =====
 
 @watchlist_bp.route('/watchlist/ai-generate', methods=['POST'])
 def generate_ai_watchlist():
-    """AI generates a personalised watchlist based on market conditions"""
     if not Config.ANTHROPIC_API_KEY:
         return jsonify({"error": "ANTHROPIC_API_KEY not configured"}), 500
 
-    user_id = str(session.get('user_id', 'guest'))
-    data    = request.get_json() or {}
-    prefs   = data.get('preferences', {})
-
-    # Get user preferences
-    risk_level = prefs.get('risk', 'medium')       # low/medium/high
-    sectors    = prefs.get('sectors', [])            # e.g. ["AI", "Quantum"]
-    style      = prefs.get('style', 'swing')         # swing/momentum/value
+    user_id    = str(session.get('user_id', 'guest'))
+    data       = request.get_json() or {}
+    prefs      = data.get('preferences', {})
+    risk_level = prefs.get('risk', 'medium')
+    sectors    = prefs.get('sectors', [])
+    style      = prefs.get('style', 'swing')
     region     = prefs.get('region', 'US')
+    today      = datetime.now().strftime('%A, %B %d, %Y')
 
-    today = datetime.now().strftime('%A, %B %d, %Y')
+    ac = get_anthropic_client()
 
-    prompt = f"""Today is {today}. You are a professional quant analyst building a personalised stock watchlist.
-
-User preferences:
-- Risk level: {risk_level}
-- Preferred sectors: {', '.join(sectors) if sectors else 'Any'}
-- Trading style: {style}
-- Region: {region}
-
-Search the web for current market conditions and generate a watchlist of 8-10 stocks.
-
-Return ONLY valid JSON (no markdown, no backticks):
-{{
-  "theme": "<one line describing today's market opportunity>",
-  "generated_at": "{today}",
-  "stocks": [
-    {{
-      "ticker": "<TICKER>",
-      "company": "<Company Name>",
-      "sector": "<Sector>",
-      "why": "<2 sentences: why this stock belongs on the watchlist TODAY>",
-      "setup": "<technical setup in plain English>",
-      "risk": "<low|medium|high>",
-      "catalyst": "<upcoming catalyst or reason for momentum>",
-      "learn": "<one thing a beginner can learn from this stock right now>"
-    }}
-  ],
-  "market_note": "<2 sentences on current market conditions affecting these picks>"
-}}
-
-Rules:
-- Mix risk levels unless user specified
-- Include at least 2 stocks with clear technical setups
-- Base on real current data from web search
-- Make explanations simple enough for a beginner"""
+    # ── Call 1: web research (Haiku, cheap) ──────────────────────────────
+    research_prompt = (
+        f"Today is {today}. You are a quant analyst. "
+        f"Search the web for current {region} market conditions and identify 8-10 stocks "
+        f"suited for a {style} trader with {risk_level} risk tolerance"
+        + (f" interested in {', '.join(sectors)}" if sectors else "") + ". "
+        "For each stock provide: ticker, company, sector, why it is relevant today, "
+        "technical setup, risk level, upcoming catalyst, and a beginner lesson. "
+        "Also summarise the overall market theme and conditions. Use real current data."
+    )
 
     try:
-        ac = get_anthropic_client()
-        msg = ac.messages.create(
+        msg1 = ac.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=2000,
+            tools=[{"type": "web_search_20250305", "name": "web_search", "max_uses": 3}],
+            messages=[{"role": "user", "content": research_prompt}]
+        )
+    except Exception as e:
+        return jsonify({"error": f"call1_research: {e}"}), 500
+
+    research = "".join(
+        b.text for b in msg1.content if hasattr(b, 'text')
+    ).strip()
+
+    if not research:
+        return jsonify({"error": "No market data returned from research"}), 500
+
+    # ── Call 2: structured output via tool_choice (Sonnet, reliable JSON) ─
+    try:
+        msg2 = ac.messages.create(
             model="claude-sonnet-4-6",
             max_tokens=2000,
-            tools=[{"type": "web_search_20250305", "name": "web_search"}],
-            messages=[{"role": "user", "content": prompt}]
+            tools=[_WATCHLIST_TOOL],
+            tool_choice={"type": "tool", "name": "submit_watchlist"},
+            messages=[{
+                "role": "user",
+                "content": (
+                    "Based on this market research, call submit_watchlist "
+                    f"with all fields populated:\n\n{research}"
+                )
+            }]
         )
-
-        raw = "".join(b.text for b in msg.content if hasattr(b, 'text'))
-        match = re.search(r'\{[\s\S]*\}', raw)
-        if not match:
-            return jsonify({"error": "Could not generate watchlist"}), 500
-
-        result = json.loads(match.group(0))
-        result['generated_at'] = datetime.now().isoformat()
-
-        # Save to store
-        if user_id not in watchlist_store:
-            watchlist_store[user_id] = {"user": [], "ai": [], "ai_updated": None}
-
-        watchlist_store[user_id]["ai"]         = result.get("stocks", [])
-        watchlist_store[user_id]["ai_updated"] = datetime.now().isoformat()
-        watchlist_store[user_id]["ai_theme"]   = result.get("theme", "")
-        watchlist_store[user_id]["market_note"]= result.get("market_note", "")
-
-        return jsonify(result)
-
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": f"call2_structure: {e}"}), 500
+
+    result = None
+    for block in msg2.content:
+        if getattr(block, 'type', None) == 'tool_use':
+            result = block.input
+            break
+
+    if not result:
+        return jsonify({"error": "Structured output not returned"}), 500
+
+    result['generated_at'] = datetime.now().isoformat()
+
+    if user_id not in watchlist_store:
+        watchlist_store[user_id] = {"user": [], "ai": [], "ai_updated": None}
+
+    watchlist_store[user_id]["ai"]          = result.get("stocks", [])
+    watchlist_store[user_id]["ai_updated"]  = datetime.now().isoformat()
+    watchlist_store[user_id]["ai_theme"]    = result.get("theme", "")
+    watchlist_store[user_id]["market_note"] = result.get("market_note", "")
+
+    return jsonify(result)
