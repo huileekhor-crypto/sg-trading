@@ -79,9 +79,9 @@ Rules:
 - Base on real current data only"""
 
         msg = ac.messages.create(
-            model="claude-sonnet-4-6",
+            model="claude-haiku-4-5-20251001",
             max_tokens=1500,
-            tools=[{"type": "web_search_20250305", "name": "web_search"}],
+            tools=[{"type": "web_search_20250305", "name": "web_search", "max_uses": 3}],
             messages=[{"role": "user", "content": prompt}]
         )
 
@@ -91,13 +91,18 @@ Rules:
             if hasattr(block, 'text'):
                 raw_text += block.text
 
-        # Parse JSON
+        # Parse JSON - strip markdown fences then find outermost object
         import re
-        match = re.search(r'\{[\s\S]*\}', raw_text)
+        clean = re.sub(r'```(?:json)?\s*', '', raw_text).replace('```', '')
+        match = re.search(r'\{[\s\S]*\}', clean)
         if not match:
             return jsonify({"error": "Could not parse market data"}), 500
 
-        data = json.loads(match.group(0))
+        json_str = match.group(0)
+        # Remove trailing commas before } or ] (common LLM output artifact)
+        json_str = re.sub(r',\s*([}\]])', r'\1', json_str)
+
+        data = json.loads(json_str)
         data['timestamp']  = datetime.now().isoformat()
         data['region']     = region
         data['from_cache'] = False
