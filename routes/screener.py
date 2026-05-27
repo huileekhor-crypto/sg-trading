@@ -21,6 +21,9 @@ def get_ohlcv(ticker, days=120):
                      end=end.strftime('%Y-%m-%d'), progress=False, auto_adjust=True)
     if df.empty:
         return None
+    # yfinance >= 0.2.44 returns MultiIndex columns for single tickers
+    if hasattr(df.columns, 'levels'):
+        df.columns = df.columns.droplevel(1)
     return {
         'c': df['Close'].tolist(),
         'h': df['High'].tolist(),
