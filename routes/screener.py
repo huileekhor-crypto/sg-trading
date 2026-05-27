@@ -283,7 +283,7 @@ RISKS: (2 sentences — key risks to this setup)
 Be specific, direct, no fluff."""
 
                 msg = ac.messages.create(
-                    model="claude-sonnet-4-6",
+                    model="claude-haiku-4-5-20251001",
                     max_tokens=250,
                     messages=[{"role": "user", "content": prompt}]
                 )
