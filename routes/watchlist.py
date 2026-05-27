@@ -134,10 +134,10 @@ def generate_ai_watchlist():
     if not research:
         return jsonify({"error": "No market data returned from research"}), 500
 
-    # ── Call 2: structured output via tool_choice (Sonnet, reliable JSON) ─
+    # ── Call 2: structured output via tool_choice (Haiku, separate quota) ──
     try:
         msg2 = ac.messages.create(
-            model="claude-sonnet-4-6",
+            model="claude-haiku-4-5-20251001",
             max_tokens=2000,
             tools=[_WATCHLIST_TOOL],
             tool_choice={"type": "tool", "name": "submit_watchlist"},
