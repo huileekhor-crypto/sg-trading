@@ -430,6 +430,25 @@ body::after{content:'';position:fixed;inset:0;background:repeating-linear-gradie
 .brk-legend.RADAR{background:rgba(0,229,255,.08);color:var(--cyan);}
 .brk-empty{text-align:center;padding:48px 20px;color:var(--text-muted);font-family:'DM Mono',monospace;font-size:12px;line-height:2;}
 @media(max-width:640px){.brk-bars{grid-template-columns:repeat(2,1fr);}.brk-actions{flex-wrap:wrap;}.brk-actions .btn{flex:1;min-width:0;}}
+
+/* ===== EMAIL RECIPIENTS ===== */
+.rcpt-row{display:flex;align-items:center;gap:10px;padding:10px 16px;border-bottom:1px solid var(--border);}
+.rcpt-row:last-child{border-bottom:none;}
+.rcpt-row:hover{background:rgba(255,255,255,.015);}
+.rcpt-avatar{width:32px;height:32px;border-radius:50%;background:var(--bg4);border:1px solid var(--border2);display:flex;align-items:center;justify-content:center;font-family:'DM Mono',monospace;font-size:12px;font-weight:600;color:var(--cyan);flex-shrink:0;}
+.rcpt-info{flex:1;min-width:0;}
+.rcpt-name{font-family:'DM Mono',monospace;font-size:12px;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.rcpt-email{font-size:11px;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.rcpt-toggle{width:36px;height:20px;border-radius:10px;border:none;cursor:pointer;position:relative;flex-shrink:0;transition:background .2s;}
+.rcpt-toggle.on{background:var(--green);}
+.rcpt-toggle.off{background:var(--bg5);}
+.rcpt-toggle::after{content:'';position:absolute;top:3px;width:14px;height:14px;border-radius:50%;background:#fff;transition:left .2s;}
+.rcpt-toggle.on::after{left:19px;}
+.rcpt-toggle.off::after{left:3px;}
+.email-status{display:inline-flex;align-items:center;gap:6px;font-family:'DM Mono',monospace;font-size:10px;font-weight:600;padding:4px 10px;border-radius:5px;}
+.email-status.ok{background:rgba(0,230,118,.1);color:var(--green);border:1px solid rgba(0,230,118,.25);}
+.email-status.err{background:rgba(255,61,90,.1);color:var(--red);border:1px solid rgba(255,61,90,.2);}
+@media(max-width:640px){.rcpt-form-row{flex-direction:column;}}
 </style>
 </head>
 <body>
@@ -829,6 +848,31 @@ body::after{content:'';position:fixed;inset:0;background:repeating-linear-gradie
       <div style="padding:30px;text-align:center;color:var(--text-muted);font-family:'DM Mono',monospace;font-size:12px">No triggered alerts yet.</div>
     </div>
   </div>
+
+  <!-- Email Recipients Manager -->
+  <div class="card" style="margin-top:14px">
+    <div class="card-hdr">
+      <div style="display:flex;align-items:center;gap:10px">
+        <span class="card-eyebrow">📧 Email Alert Recipients</span>
+        <span id="emailStatusBadge"></span>
+      </div>
+      <button class="btn btn-ghost" id="testEmailBtn" onclick="sendTestEmail()" style="padding:5px 12px;font-size:10px">📧 Send Test</button>
+    </div>
+    <div style="padding:14px 16px;border-bottom:1px solid var(--border)">
+      <div style="display:flex;gap:8px;flex-wrap:wrap" class="rcpt-form-row">
+        <input class="txt-input" id="rcptEmail" type="email" placeholder="email@example.com" style="flex:2;min-width:160px">
+        <input class="txt-input" id="rcptName" type="text" placeholder="Name (optional)" style="flex:1;min-width:120px">
+        <button class="btn btn-primary" onclick="addRecipient()" style="white-space:nowrap;padding:10px 16px">+ Add</button>
+      </div>
+      <div class="err" id="rcptErr" style="margin-top:8px"></div>
+    </div>
+    <div id="rcptList">
+      <div style="padding:28px;text-align:center;color:var(--text-muted);font-family:'DM Mono',monospace;font-size:11px">No recipients yet — add an email address above to receive breakout alerts.</div>
+    </div>
+    <div style="padding:10px 16px;border-top:1px solid var(--border)">
+      <div style="font-size:11px;color:var(--text-muted);line-height:1.6">Emails sent automatically when a stock scores <strong style="color:var(--red)">80+</strong> (IMMINENT). Max one alert per ticker per 24 hours.</div>
+    </div>
+  </div>
 </div>
 
 <!-- ===== BREAKOUT SCANNER ===== -->
@@ -896,7 +940,7 @@ function switchTab(tab){
   document.getElementById('panel-'+tab).classList.add('active');
   if(tab==='scenarios'&&!document.getElementById('scenariosContainer').innerHTML)loadScenarios();
   if(tab==='journal')loadJournal();
-  if(tab==='alerts'){loadAlerts();ackAlerts();}
+  if(tab==='alerts'){loadAlerts();ackAlerts();loadRecipients();}
 }
 
 // ===== WATCHLIST STATE (localStorage) =====
@@ -1668,6 +1712,107 @@ function showAlErr(msg){
 
 // Poll badge every 60 seconds
 pollAlertBadge();
+
+// ===== EMAIL RECIPIENTS =====
+async function loadRecipients(){
+  try {
+    const res  = await fetch('/api/alerts/recipients');
+    const data = await res.json();
+    if(data.error) return;
+    renderRecipients(data.recipients || []);
+    // Show email config status badge
+    const badge = document.getElementById('emailStatusBadge');
+    if(data.email_configured){
+      badge.innerHTML = '<span class="email-status ok">● Configured</span>';
+    } else {
+      badge.innerHTML = '<span class="email-status err">● Not configured</span>';
+    }
+  } catch(e) {}
+}
+
+function renderRecipients(list){
+  const el = document.getElementById('rcptList');
+  if(!list.length){
+    el.innerHTML = '<div style="padding:28px;text-align:center;color:var(--text-muted);font-family:\'DM Mono\',monospace;font-size:11px">No recipients yet — add an email address above to receive breakout alerts.</div>';
+    return;
+  }
+  el.innerHTML = list.map(r => {
+    const initials = (r.name || r.email).trim().charAt(0).toUpperCase();
+    return `<div class="rcpt-row">
+      <div class="rcpt-avatar">${initials}</div>
+      <div class="rcpt-info">
+        <div class="rcpt-name">${r.name || '—'}</div>
+        <div class="rcpt-email">${r.email}</div>
+      </div>
+      <button class="rcpt-toggle ${r.active ? 'on' : 'off'}" title="${r.active ? 'Active — click to pause' : 'Paused — click to activate'}"
+        onclick="toggleRecipient(${r.id})"></button>
+      <button onclick="deleteRecipient(${r.id})" title="Remove recipient"
+        style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:16px;padding:4px 6px;border-radius:4px;transition:color .15s"
+        onmouseover="this.style.color='var(--red)'" onmouseout="this.style.color='var(--text-muted)'">×</button>
+    </div>`;
+  }).join('');
+}
+
+async function addRecipient(){
+  const email = document.getElementById('rcptEmail').value.trim().toLowerCase();
+  const name  = document.getElementById('rcptName').value.trim();
+  const errEl = document.getElementById('rcptErr');
+  errEl.classList.remove('show');
+  if(!email || !email.includes('@')){
+    errEl.textContent = 'Please enter a valid email address.';
+    errEl.classList.add('show');
+    return;
+  }
+  try {
+    const res  = await fetch('/api/alerts/recipients/add', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({email, name})
+    });
+    const data = await res.json();
+    if(data.error){ errEl.textContent = data.error; errEl.classList.add('show'); return; }
+    document.getElementById('rcptEmail').value = '';
+    document.getElementById('rcptName').value  = '';
+    renderRecipients(data.recipients || []);
+    showToast(email + ' added to alert recipients');
+  } catch(e) {
+    errEl.textContent = 'Failed to add recipient.'; errEl.classList.add('show');
+  }
+}
+
+async function deleteRecipient(id){
+  if(!confirm('Remove this recipient?')) return;
+  try {
+    const res  = await fetch('/api/alerts/recipients/'+id, {method:'DELETE'});
+    const data = await res.json();
+    if(!data.error) renderRecipients(data.recipients || []);
+  } catch(e) {}
+}
+
+async function toggleRecipient(id){
+  try {
+    const res  = await fetch('/api/alerts/recipients/'+id, {method:'PUT'});
+    const data = await res.json();
+    if(!data.error) renderRecipients(data.recipients || []);
+  } catch(e) {}
+}
+
+async function sendTestEmail(){
+  const btn = document.getElementById('testEmailBtn');
+  btn.disabled = true; btn.textContent = '⏳ Sending...';
+  try {
+    const res  = await fetch('/api/alerts/test-email', {method:'POST'});
+    const data = await res.json();
+    if(data.error){
+      showToast('⚠ ' + data.error);
+    } else {
+      showToast('✅ Test email sent to ' + data.sent + ' recipient' + (data.sent!==1?'s':''));
+    }
+  } catch(e) {
+    showToast('⚠ Network error sending test email');
+  } finally {
+    btn.disabled = false; btn.textContent = '📧 Send Test';
+  }
+}
 setInterval(pollAlertBadge, 60000);
 </script>
 </body>

@@ -111,3 +111,41 @@ Set in your .env file:
 GOOGLE_CLIENT_ID=test
 The Google button will show an error message
 Email/password signup still works fully locally
+
+---
+
+## Setting up Breakout Email Alerts
+
+The dashboard sends HTML emails automatically when a stock scores 80+ (IMMINENT).
+Uses Python's built-in `smtplib` — no extra packages needed.
+
+### Option A — Gmail (recommended)
+
+1. Enable 2-Factor Authentication on your Gmail account
+2. Go to **Google Account → Security → App Passwords**
+3. Generate a password for "Mail" / "Other"
+4. Add these to Azure Portal → Your Web App → Configuration → Application Settings:
+
+   ```
+   EMAIL_SENDER    = your.address@gmail.com
+   EMAIL_PASSWORD  = xxxx-xxxx-xxxx-xxxx   ← the App Password (not your Gmail password)
+   ```
+   (EMAIL_SMTP_HOST and EMAIL_SMTP_PORT default to smtp.gmail.com / 587)
+
+### Option B — Any SMTP provider
+
+   ```
+   EMAIL_SENDER    = alerts@yourdomain.com
+   EMAIL_SMTP_HOST = smtp.yourprovider.com
+   EMAIL_SMTP_PORT = 587
+   EMAIL_PASSWORD  = yourpassword
+   ```
+
+### After configuring
+
+1. Save + Restart in Azure Portal
+2. Open the dashboard → **🔔 Alerts** tab → scroll to **Email Alert Recipients**
+3. Add recipient email addresses
+4. Click **📧 Send Test** to verify delivery
+5. Run the Breakout Scanner — IMMINENT results (80+) trigger emails automatically,
+   with a 24-hour dedup so each ticker only alerts once per day

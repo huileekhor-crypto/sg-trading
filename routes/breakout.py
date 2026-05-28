@@ -219,6 +219,21 @@ def _scan_list(tickers):
         except Exception:
             pass
     results.sort(key=lambda x: x['score'], reverse=True)
+
+    # Fire email alerts for any IMMINENT result not sent in the last 24 h
+    if Config.EMAIL_SENDER and Config.EMAIL_PASSWORD:
+        try:
+            from utils.emailer import send_breakout_alert
+            from models.alerts import get_active_recipients, was_recently_alerted, mark_alerted
+            recipients = get_active_recipients()
+            if recipients:
+                for stock in results:
+                    if stock['score'] >= 80 and not was_recently_alerted(stock['ticker']):
+                        send_breakout_alert(stock, recipients)
+                        mark_alerted(stock['ticker'])
+        except Exception:
+            pass  # Never let email failure break the scan response
+
     return results
 
 

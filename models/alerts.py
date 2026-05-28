@@ -25,6 +25,94 @@ def init_alerts_db():
             created_at  TEXT DEFAULT CURRENT_TIMESTAMP
         )
     ''')
+    conn.execute('''
+        CREATE TABLE IF NOT EXISTS alert_recipients (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            email      TEXT NOT NULL UNIQUE,
+            name       TEXT NOT NULL DEFAULT '',
+            active     INTEGER NOT NULL DEFAULT 1,
+            added_at   TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    conn.execute('''
+        CREATE TABLE IF NOT EXISTS breakout_sent (
+            id        INTEGER PRIMARY KEY AUTOINCREMENT,
+            ticker    TEXT NOT NULL,
+            sent_at   TEXT NOT NULL
+        )
+    ''')
+    conn.commit()
+    conn.close()
+
+
+# ── Email recipients ──────────────────────────────────────────────────────────
+
+def get_recipients():
+    conn = get_db()
+    rows = conn.execute(
+        'SELECT * FROM alert_recipients ORDER BY added_at DESC'
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def get_active_recipients():
+    conn = get_db()
+    rows = conn.execute(
+        'SELECT * FROM alert_recipients WHERE active = 1'
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def add_recipient(email, name=''):
+    conn = get_db()
+    conn.execute(
+        'INSERT OR IGNORE INTO alert_recipients (email, name) VALUES (?, ?)',
+        (email.strip().lower(), name.strip())
+    )
+    conn.commit()
+    conn.close()
+
+
+def delete_recipient(recipient_id):
+    conn = get_db()
+    conn.execute('DELETE FROM alert_recipients WHERE id = ?', (recipient_id,))
+    conn.commit()
+    conn.close()
+
+
+def toggle_recipient(recipient_id):
+    conn = get_db()
+    conn.execute(
+        'UPDATE alert_recipients SET active = 1 - active WHERE id = ?',
+        (recipient_id,)
+    )
+    conn.commit()
+    conn.close()
+
+
+# ── Breakout dedup ────────────────────────────────────────────────────────────
+
+def was_recently_alerted(ticker, hours=24):
+    conn = get_db()
+    row = conn.execute(
+        '''SELECT 1 FROM breakout_sent
+           WHERE ticker = ?
+             AND sent_at > datetime('now', ?)
+           LIMIT 1''',
+        (ticker.upper(), f'-{hours} hours')
+    ).fetchone()
+    conn.close()
+    return row is not None
+
+
+def mark_alerted(ticker):
+    conn = get_db()
+    conn.execute(
+        'INSERT INTO breakout_sent (ticker, sent_at) VALUES (?, ?)',
+        (ticker.upper(), datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S'))
+    )
     conn.commit()
     conn.close()
 
