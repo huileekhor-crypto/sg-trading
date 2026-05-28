@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>SG Trading — Sign In</title>
-<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=DM+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500;600&family=DM+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
 :root {
   --bg:#08090C;--bg2:#0D0F14;--bg3:#12151C;--bg4:#181C26;
@@ -13,20 +13,20 @@
   --cyan:#00E5FF;--cyan2:#00A8CC;--green:#00E676;--red:#FF3D5A;
 }
 *{box-sizing:border-box;margin:0;padding:0;}
-body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px;}
+body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;font-weight:500;line-height:1.6;letter-spacing:0.01em;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px;}
 body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(rgba(0,229,255,0.03) 1px,transparent 1px),linear-gradient(90deg,rgba(0,229,255,0.03) 1px,transparent 1px);background-size:40px 40px;pointer-events:none;}
 
 .card{background:var(--bg2);border:1px solid var(--border);border-radius:16px;padding:40px 36px;width:100%;max-width:420px;position:relative;overflow:hidden;}
 .card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,var(--cyan2),var(--cyan),#BB86FC);}
 
-.logo{font-family:'DM Mono',monospace;font-size:22px;font-weight:500;text-align:center;margin-bottom:6px;}
+.logo{font-family:'DM Mono',monospace;font-size:22px;font-weight:600;text-align:center;margin-bottom:6px;}
 .logo span{color:var(--cyan);}
-.tagline{font-family:'DM Mono',monospace;font-size:10px;color:var(--text-muted);text-align:center;letter-spacing:.2em;text-transform:uppercase;margin-bottom:32px;}
+.tagline{font-family:'DM Mono',monospace;font-size:11px;font-weight:500;color:var(--text-muted);text-align:center;letter-spacing:.2em;text-transform:uppercase;margin-bottom:32px;}
 
 /* Tabs */
 .auth-tabs{display:flex;background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:3px;margin-bottom:24px;}
-.auth-tab{flex:1;padding:8px;text-align:center;font-family:'DM Mono',monospace;font-size:11px;letter-spacing:.08em;cursor:pointer;border-radius:6px;border:none;background:transparent;color:var(--text-muted);transition:all .2s;}
-.auth-tab.active{background:var(--bg4);color:var(--cyan);border:1px solid var(--border2);}
+.auth-tab{flex:1;padding:8px;text-align:center;font-family:'DM Mono',monospace;font-size:12px;font-weight:500;letter-spacing:.08em;cursor:pointer;border-radius:6px;border:none;background:transparent;color:var(--text-muted);transition:all .2s;}
+.auth-tab.active{background:var(--bg4);color:var(--cyan);border:1px solid var(--border2);font-weight:700;}
 
 /* Google button */
 .btn-google{width:100%;padding:13px;background:#fff;color:#1a1a1a;border:none;border-radius:8px;font-family:'DM Sans',sans-serif;font-size:14px;font-weight:600;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:10px;transition:all .2s;margin-bottom:16px;}
@@ -36,35 +36,35 @@ body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(
 /* Divider */
 .divider{display:flex;align-items:center;gap:12px;margin-bottom:16px;}
 .divider-line{flex:1;height:1px;background:var(--border);}
-.divider-text{font-family:'DM Mono',monospace;font-size:10px;color:var(--text-muted);letter-spacing:.1em;}
+.divider-text{font-family:'DM Mono',monospace;font-size:11px;font-weight:500;color:var(--text-muted);letter-spacing:.1em;}
 
 /* Form */
 .form-group{margin-bottom:14px;}
-.form-label{font-family:'DM Mono',monospace;font-size:10px;letter-spacing:.14em;color:var(--text-dim);text-transform:uppercase;display:block;margin-bottom:6px;}
+.form-label{font-family:'DM Mono',monospace;font-size:11px;font-weight:600;letter-spacing:.14em;color:var(--text-dim);text-transform:uppercase;display:block;margin-bottom:6px;}
 .form-input{width:100%;background:var(--bg3);border:1px solid var(--border2);border-radius:8px;color:var(--text);font-family:'DM Sans',sans-serif;font-size:14px;padding:12px 14px;outline:none;transition:border-color .2s;}
 .form-input:focus{border-color:var(--cyan2);}
 .form-input::placeholder{color:var(--text-muted);}
 
 /* Submit button */
-.btn-primary{width:100%;padding:13px;background:var(--cyan);color:var(--bg);border:none;border-radius:8px;font-family:'DM Mono',monospace;font-size:12px;font-weight:500;letter-spacing:.1em;cursor:pointer;transition:all .2s;margin-top:4px;}
+.btn-primary{width:100%;padding:13px;background:var(--cyan);color:var(--bg);border:none;border-radius:8px;font-family:'DM Mono',monospace;font-size:13px;font-weight:700;letter-spacing:.1em;cursor:pointer;transition:all .2s;margin-top:4px;}
 .btn-primary:hover{background:#33EEFF;transform:translateY(-1px);}
 .btn-primary:disabled{background:var(--bg4);color:var(--text-muted);cursor:not-allowed;transform:none;}
 
 /* Error / success */
-.msg{padding:10px 14px;border-radius:7px;font-size:12px;margin-bottom:14px;display:none;}
+.msg{padding:10px 14px;border-radius:7px;font-size:13px;margin-bottom:14px;display:none;}
 .msg.show{display:block;}
 .msg.error{background:rgba(255,61,90,.1);border:1px solid rgba(255,61,90,.25);color:var(--red);}
 .msg.success{background:rgba(0,230,118,.1);border:1px solid rgba(0,230,118,.25);color:var(--green);}
 
 /* Footer */
-.auth-footer{text-align:center;margin-top:20px;font-size:12px;color:var(--text-muted);}
+.auth-footer{text-align:center;margin-top:20px;font-size:13px;color:var(--text-muted);}
 
 /* Password strength */
 .pwd-strength{height:3px;border-radius:2px;margin-top:6px;transition:all .3s;background:var(--border);}
 .pwd-strength.weak{background:var(--red);width:33%;}
 .pwd-strength.medium{background:var(--amber);width:66%;}
 .pwd-strength.strong{background:var(--green);width:100%;}
-.pwd-label{font-family:'DM Mono',monospace;font-size:9px;color:var(--text-muted);margin-top:3px;}
+.pwd-label{font-family:'DM Mono',monospace;font-size:10px;font-weight:500;color:var(--text-muted);margin-top:3px;}
 
 /* Loading spinner */
 .spinner{display:inline-block;width:14px;height:14px;border:2px solid rgba(8,9,12,.3);border-top:2px solid var(--bg);border-radius:50%;animation:spin .8s linear infinite;margin-right:6px;}
