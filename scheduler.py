@@ -1,5 +1,6 @@
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
+from apscheduler.triggers.interval import IntervalTrigger
 from datetime import datetime
 import requests
 import logging
@@ -34,6 +35,54 @@ def run_morning_scan():
 
     logger.info("✅ All morning scans complete — results ready for review")
 
+
+def check_price_alerts():
+    """Check active price alerts every 5 minutes using Finnhub quotes."""
+    try:
+        from models.alerts import get_active_alerts, fire_alert
+        from config import Config
+        import finnhub
+    except Exception as e:
+        logger.error(f"❌ Alert check import error: {e}")
+        return
+
+    if not Config.FINNHUB_API_KEY:
+        return
+
+    alerts = get_active_alerts()
+    if not alerts:
+        return
+
+    fc = finnhub.Client(api_key=Config.FINNHUB_API_KEY)
+
+    # Batch by ticker to minimise API calls
+    by_ticker = {}
+    for a in alerts:
+        by_ticker.setdefault(a['ticker'], []).append(a)
+
+    fired_count = 0
+    for ticker, ticker_alerts in by_ticker.items():
+        try:
+            quote = fc.quote(ticker)
+            price = quote.get('c', 0)
+            if not price:
+                continue
+            for a in ticker_alerts:
+                triggered = (
+                    (a['condition'] == 'above' and price >= a['target']) or
+                    (a['condition'] == 'below' and price <= a['target'])
+                )
+                if triggered:
+                    fire_alert(a['id'], price)
+                    fired_count += 1
+                    logger.info(f"🔔 Alert fired: {ticker} {a['condition']} ${a['target']} — current ${price:.2f}")
+        except Exception as e:
+            logger.warning(f"⚠ Alert check failed for {ticker}: {e}")
+
+    if fired_count:
+        logger.info(f"🔔 {fired_count} alert(s) fired")
+
+
 def start_scheduler():
     """Start the background scheduler"""
     # Run every day at 10:00 UTC = 6:00pm SGT
@@ -45,5 +94,13 @@ def start_scheduler():
         replace_existing=True
     )
 
+    scheduler.add_job(
+        check_price_alerts,
+        IntervalTrigger(minutes=5),
+        id='price_alerts',
+        name='Price Alert Check (every 5 min)',
+        replace_existing=True
+    )
+
     scheduler.start()
-    logger.info("⏰ Scheduler started — daily scan at 6:00pm SGT (10:00 UTC)")
+    logger.info("⏰ Scheduler started — daily scan at 6:00pm SGT (10:00 UTC), alerts every 5 min")

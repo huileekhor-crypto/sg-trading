@@ -323,6 +323,26 @@ body::after{content:'';position:fixed;inset:0;background:repeating-linear-gradie
   .j-stats{grid-template-columns:repeat(2,1fr);}
   .j-filters{flex-direction:column;}
 }
+
+/* ===== ALERTS ===== */
+.alert-badge{display:inline-block;width:8px;height:8px;background:var(--red);border-radius:50%;box-shadow:0 0 6px var(--red);margin-left:5px;vertical-align:middle;animation:blink 1.5s infinite;}
+.al-form-row{display:grid;grid-template-columns:1fr 1.5fr 1fr auto;gap:10px;align-items:end;}
+.al-row{display:flex;align-items:center;justify-content:space-between;padding:11px 16px;border-bottom:1px solid var(--border);gap:12px;}
+.al-row:last-child{border-bottom:none;}
+.al-row:hover{background:rgba(255,255,255,.02);}
+.al-ticker{font-family:'DM Mono',monospace;font-size:13px;font-weight:500;color:var(--text);letter-spacing:.06em;min-width:60px;}
+.al-cond{font-family:'DM Mono',monospace;font-size:11px;color:var(--text-dim);}
+.al-target{font-family:'DM Mono',monospace;font-size:13px;color:var(--cyan);}
+.al-badge-above{background:rgba(0,230,118,.12);border:1px solid rgba(0,230,118,.3);color:var(--green);font-family:'DM Mono',monospace;font-size:9px;padding:2px 7px;border-radius:4px;letter-spacing:.08em;}
+.al-badge-below{background:rgba(255,61,90,.12);border:1px solid rgba(255,61,90,.3);color:var(--red);font-family:'DM Mono',monospace;font-size:9px;padding:2px 7px;border-radius:4px;letter-spacing:.08em;}
+.al-meta{font-family:'DM Mono',monospace;font-size:9px;color:var(--text-muted);}
+.al-fired-price{font-family:'DM Mono',monospace;font-size:11px;}
+@media(max-width:640px){
+  .al-form-row{grid-template-columns:1fr 1fr;}
+}
+@media(max-width:420px){
+  .al-form-row{grid-template-columns:1fr;}
+}
 </style>
 </head>
 <body>
@@ -354,6 +374,7 @@ body::after{content:'';position:fixed;inset:0;background:repeating-linear-gradie
   <button class="tab" onclick="switchTab('scenarios')">🎯 Scenarios</button>
   <button class="tab" onclick="switchTab('chart')">📊 Chart</button>
   <button class="tab" onclick="switchTab('journal')">📓 Journal</button>
+  <button class="tab" onclick="switchTab('alerts')" id="alertsTab">🔔 Alerts<span class="alert-badge" id="alertBadge" style="display:none"></span></button>
 </div>
 
 <!-- ===== SCREENER ===== -->
@@ -655,6 +676,62 @@ body::after{content:'';position:fixed;inset:0;background:repeating-linear-gradie
   </div>
 </div>
 
+<!-- ===== ALERTS ===== -->
+<div class="panel" id="panel-alerts">
+  <!-- Add alert form -->
+  <div class="card" style="margin-bottom:14px">
+    <div class="card-hdr">
+      <span class="card-eyebrow">Set Price Alert</span>
+    </div>
+    <div style="padding:16px">
+      <div class="al-form-row">
+        <div class="j-field">
+          <label class="j-label">Ticker</label>
+          <input class="txt-input ticker j-input" id="alTicker" placeholder="AAPL">
+        </div>
+        <div class="j-field">
+          <label class="j-label">Condition</label>
+          <select class="txt-input j-input" id="alCondition">
+            <option value="above">Price rises above</option>
+            <option value="below">Price falls below</option>
+          </select>
+        </div>
+        <div class="j-field">
+          <label class="j-label">Target Price $</label>
+          <input class="txt-input j-input" id="alTarget" type="number" step="0.01" placeholder="0.00">
+        </div>
+        <div class="j-field" style="justify-content:flex-end">
+          <label class="j-label">&nbsp;</label>
+          <button class="btn btn-primary" id="alSaveBtn" onclick="saveAlert()" style="white-space:nowrap">SET ALERT</button>
+        </div>
+      </div>
+      <div class="err" id="alErr" style="margin-top:10px"></div>
+    </div>
+  </div>
+
+  <!-- Active alerts -->
+  <div class="card" style="margin-bottom:14px">
+    <div class="card-hdr">
+      <span class="card-eyebrow">Active Alerts</span>
+      <span id="alActiveCount" style="font-family:'DM Mono',monospace;font-size:10px;color:var(--text-muted)">—</span>
+    </div>
+    <div id="alActiveList">
+      <div style="padding:30px;text-align:center;color:var(--text-muted);font-family:'DM Mono',monospace;font-size:12px">No active alerts.</div>
+    </div>
+  </div>
+
+  <!-- Triggered alerts -->
+  <div class="card">
+    <div class="card-hdr">
+      <span class="card-eyebrow">Triggered</span>
+      <button class="btn btn-ghost" style="padding:5px 10px;font-size:10px" onclick="clearTriggered()">Clear All</button>
+    </div>
+    <div id="alFiredList">
+      <div style="padding:30px;text-align:center;color:var(--text-muted);font-family:'DM Mono',monospace;font-size:12px">No triggered alerts yet.</div>
+    </div>
+  </div>
+</div>
+
 <div class="disclaimer"><strong>Not financial advice.</strong> Educational purposes only. Always do your own analysis before trading.</div>
 </div>
 
@@ -685,12 +762,13 @@ setInterval(updateClock,1000); updateClock();
 
 // ===== TABS =====
 function switchTab(tab){
-  const tabs=['screener','watchlist','scanner','scenarios','chart','journal'];
+  const tabs=['screener','watchlist','scanner','scenarios','chart','journal','alerts'];
   document.querySelectorAll('.tabs>.tab').forEach((t,i)=>t.classList.toggle('active',tabs[i]===tab));
   document.querySelectorAll('.panel').forEach(p=>p.classList.remove('active'));
   document.getElementById('panel-'+tab).classList.add('active');
   if(tab==='scenarios'&&!document.getElementById('scenariosContainer').innerHTML)loadScenarios();
   if(tab==='journal')loadJournal();
+  if(tab==='alerts'){loadAlerts();ackAlerts();}
 }
 
 // ===== WATCHLIST STATE (localStorage) =====
@@ -1202,6 +1280,131 @@ async function deleteJTrade(id){
 
 // Set default date to today
 document.getElementById('jDate').value = new Date().toISOString().slice(0,10);
+</script>
+
+<script>
+// ===== ALERTS =====
+
+async function loadAlerts(){
+  try {
+    const res  = await fetch('/api/alerts');
+    const data = await res.json();
+    if(data.error) return;
+    const active  = data.alerts.filter(a => !a.fired);
+    const fired   = data.alerts.filter(a =>  a.fired);
+    renderActiveAlerts(active);
+    renderFiredAlerts(fired);
+    document.getElementById('alActiveCount').textContent = active.length + ' active';
+  } catch(e) {}
+}
+
+function renderActiveAlerts(alerts){
+  const el = document.getElementById('alActiveList');
+  if(!alerts.length){
+    el.innerHTML='<div style="padding:30px;text-align:center;color:var(--text-muted);font-family:\'DM Mono\',monospace;font-size:12px">No active alerts.</div>';
+    return;
+  }
+  el.innerHTML = alerts.map(a => `
+    <div class="al-row">
+      <span class="al-ticker">${a.ticker}</span>
+      <span class="al-cond">${a.condition === 'above' ? '↑' : '↓'}</span>
+      <span class="al-target">$${parseFloat(a.target).toFixed(2)}</span>
+      <span class="al-badge-${a.condition}">${a.condition.toUpperCase()}</span>
+      <span class="al-meta">${(a.created_at||'').slice(0,10)}</span>
+      <button class="j-del" onclick="deleteAlert(${a.id})" title="Delete">✕</button>
+    </div>`).join('');
+}
+
+function renderFiredAlerts(alerts){
+  const el = document.getElementById('alFiredList');
+  if(!alerts.length){
+    el.innerHTML='<div style="padding:30px;text-align:center;color:var(--text-muted);font-family:\'DM Mono\',monospace;font-size:12px">No triggered alerts yet.</div>';
+    return;
+  }
+  el.innerHTML = alerts.map(a => {
+    const win = a.condition === 'above';
+    const cls = win ? 'j-win' : 'j-loss';
+    return `<div class="al-row">
+      <span class="al-ticker">${a.ticker}</span>
+      <span class="al-cond">${a.condition === 'above' ? '↑' : '↓'}</span>
+      <span class="al-target" style="text-decoration:line-through;opacity:.5">$${parseFloat(a.target).toFixed(2)}</span>
+      <span class="al-fired-price ${cls}">hit $${parseFloat(a.fired_price||0).toFixed(2)}</span>
+      <span class="al-badge-${a.condition}">${a.condition.toUpperCase()}</span>
+      <span class="al-meta">${a.fired_at||''}</span>
+      <button class="j-del" onclick="deleteAlert(${a.id})" title="Delete">✕</button>
+    </div>`;
+  }).join('');
+}
+
+async function saveAlert(){
+  const ticker    = document.getElementById('alTicker').value.trim().toUpperCase();
+  const condition = document.getElementById('alCondition').value;
+  const target    = document.getElementById('alTarget').value;
+  if(!ticker || !target){ showAlErr('Ticker and target price are required.'); return; }
+
+  const btn = document.getElementById('alSaveBtn');
+  btn.disabled = true; btn.textContent = 'Saving...';
+  try {
+    const res  = await fetch('/api/alerts/add', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ticker, condition, target})
+    });
+    const data = await res.json();
+    if(data.error){ showAlErr(data.error); return; }
+    document.getElementById('alTicker').value = '';
+    document.getElementById('alTarget').value = '';
+    showToast('Alert set for ' + ticker);
+    loadAlerts();
+  } catch(e) {
+    showAlErr('Save failed — please try again.');
+  } finally {
+    btn.disabled = false; btn.textContent = 'SET ALERT';
+  }
+}
+
+async function deleteAlert(id){
+  try {
+    await fetch('/api/alerts/'+id, {method:'DELETE'});
+    loadAlerts();
+  } catch(e) {}
+}
+
+async function clearTriggered(){
+  const res  = await fetch('/api/alerts');
+  const data = await res.json();
+  if(data.error) return;
+  const fired = data.alerts.filter(a => a.fired);
+  await Promise.all(fired.map(a => fetch('/api/alerts/'+a.id, {method:'DELETE'})));
+  loadAlerts();
+}
+
+async function ackAlerts(){
+  try {
+    await fetch('/api/alerts/ack', {method:'POST'});
+    document.getElementById('alertBadge').style.display = 'none';
+  } catch(e) {}
+}
+
+async function pollAlertBadge(){
+  try {
+    const res  = await fetch('/api/alerts/badge');
+    const data = await res.json();
+    const badge = document.getElementById('alertBadge');
+    badge.style.display = (data.count > 0) ? 'inline-block' : 'none';
+  } catch(e) {}
+}
+
+function showAlErr(msg){
+  const el = document.getElementById('alErr');
+  el.textContent = msg;
+  el.classList.add('show');
+  setTimeout(()=>el.classList.remove('show'), 4000);
+}
+
+// Poll badge every 60 seconds
+pollAlertBadge();
+setInterval(pollAlertBadge, 60000);
 </script>
 </body>
 </html>

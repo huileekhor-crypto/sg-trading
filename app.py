@@ -8,8 +8,10 @@ from routes.chart import chart_bp
 from routes.auth import auth_bp
 from routes.watchlist import watchlist_bp
 from routes.journal import journal_bp
+from routes.alerts import alerts_bp
 from models.user import init_db
 from models.journal import init_journal_db
+from models.alerts import init_alerts_db
 from scheduler import start_scheduler
 
 app = Flask(__name__, static_folder='static', template_folder='templates')
@@ -29,6 +31,7 @@ app.register_blueprint(chart_bp,     url_prefix='/api')
 app.register_blueprint(auth_bp)
 app.register_blueprint(watchlist_bp, url_prefix='/api')
 app.register_blueprint(journal_bp,   url_prefix='/api')
+app.register_blueprint(alerts_bp,   url_prefix='/api')
 
 def login_required(f):
     """Decorator to protect routes"""
@@ -71,6 +74,7 @@ def health():
 
 init_db()
 init_journal_db()
+init_alerts_db()
 start_scheduler()
 
 if __name__ == '__main__':
