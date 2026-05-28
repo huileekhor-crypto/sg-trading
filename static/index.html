@@ -289,6 +289,40 @@ body::after{content:'';position:fixed;inset:0;background:repeating-linear-gradie
   .signals-grid{padding:12px;}
   .analysis-block{padding:10px 12px;}
 }
+
+/* ===== JOURNAL ===== */
+.j-stats{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:14px;}
+.j-stat{background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:14px 10px;text-align:center;}
+.j-stat-val{font-family:'DM Mono',monospace;font-size:20px;font-weight:500;margin-bottom:4px;}
+.j-stat-val.green{color:var(--green);}
+.j-stat-val.red{color:var(--red);}
+.j-stat-lbl{font-family:'DM Mono',monospace;font-size:9px;color:var(--text-muted);letter-spacing:.12em;text-transform:uppercase;}
+.j-form-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;}
+.j-field{display:flex;flex-direction:column;gap:5px;}
+.j-field-wide{grid-column:span 2;}
+.j-label{font-family:'DM Mono',monospace;font-size:9px;color:var(--text-muted);letter-spacing:.14em;text-transform:uppercase;}
+.j-input{padding:9px 11px;font-size:13px;}
+.j-filters{display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;}
+.j-table{width:100%;border-collapse:collapse;font-size:12px;}
+.j-table th{font-family:'DM Mono',monospace;font-size:9px;letter-spacing:.12em;color:var(--text-muted);text-transform:uppercase;padding:10px 12px;border-bottom:1px solid var(--border);text-align:left;white-space:nowrap;}
+.j-table td{padding:10px 12px;border-bottom:1px solid var(--border);color:var(--text-dim);font-family:'DM Mono',monospace;font-size:11px;white-space:nowrap;}
+.j-table tr:last-child td{border-bottom:none;}
+.j-table tr:hover td{background:rgba(255,255,255,.02);}
+.j-ticker{color:var(--text);font-weight:500;letter-spacing:.06em;}
+.j-win{color:var(--green);}
+.j-loss{color:var(--red);}
+.j-emotion{display:inline-flex;gap:1px;}
+.j-del{background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:14px;padding:2px 4px;border-radius:4px;transition:color .15s;}
+.j-del:hover{color:var(--red);}
+@media(max-width:640px){
+  .j-stats{grid-template-columns:repeat(3,1fr);}
+  .j-form-grid{grid-template-columns:repeat(2,1fr);}
+  .j-field-wide{grid-column:span 2;}
+}
+@media(max-width:420px){
+  .j-stats{grid-template-columns:repeat(2,1fr);}
+  .j-filters{flex-direction:column;}
+}
 </style>
 </head>
 <body>
@@ -319,6 +353,7 @@ body::after{content:'';position:fixed;inset:0;background:repeating-linear-gradie
   <button class="tab" onclick="switchTab('scanner')">📡 Scanner</button>
   <button class="tab" onclick="switchTab('scenarios')">🎯 Scenarios</button>
   <button class="tab" onclick="switchTab('chart')">📊 Chart</button>
+  <button class="tab" onclick="switchTab('journal')">📓 Journal</button>
 </div>
 
 <!-- ===== SCREENER ===== -->
@@ -539,6 +574,87 @@ body::after{content:'';position:fixed;inset:0;background:repeating-linear-gradie
   <div id="chartResults"></div>
 </div>
 
+<!-- ===== JOURNAL ===== -->
+<div class="panel" id="panel-journal">
+  <!-- Stats bar -->
+  <div class="j-stats" id="jStats" style="display:none">
+    <div class="j-stat"><div class="j-stat-val" id="jTotal">0</div><div class="j-stat-lbl">Trades</div></div>
+    <div class="j-stat"><div class="j-stat-val green" id="jWinRate">0%</div><div class="j-stat-lbl">Win Rate</div></div>
+    <div class="j-stat"><div class="j-stat-val green" id="jAvgWin">0%</div><div class="j-stat-lbl">Avg Win</div></div>
+    <div class="j-stat"><div class="j-stat-val red" id="jAvgLoss">0%</div><div class="j-stat-lbl">Avg Loss</div></div>
+    <div class="j-stat"><div class="j-stat-val" id="jTotalPnl">$0</div><div class="j-stat-lbl">Total P&amp;L</div></div>
+  </div>
+
+  <!-- Add trade form -->
+  <div class="card" id="jFormCard">
+    <div class="card-hdr">
+      <span class="card-eyebrow">Log Trade</span>
+      <button class="btn btn-ghost" style="padding:5px 10px;font-size:10px" onclick="toggleJForm()">▲ Hide</button>
+    </div>
+    <div id="jFormBody" style="padding:16px">
+      <div class="j-form-grid">
+        <div class="j-field">
+          <label class="j-label">Ticker</label>
+          <input class="txt-input ticker j-input" id="jTicker" placeholder="AAPL">
+        </div>
+        <div class="j-field">
+          <label class="j-label">Date</label>
+          <input class="txt-input j-input" id="jDate" type="date">
+        </div>
+        <div class="j-field">
+          <label class="j-label">Entry $</label>
+          <input class="txt-input j-input" id="jEntry" type="number" step="0.01" placeholder="0.00">
+        </div>
+        <div class="j-field">
+          <label class="j-label">Exit $</label>
+          <input class="txt-input j-input" id="jExit" type="number" step="0.01" placeholder="0.00">
+        </div>
+        <div class="j-field">
+          <label class="j-label">Shares</label>
+          <input class="txt-input j-input" id="jSize" type="number" step="1" placeholder="100">
+        </div>
+        <div class="j-field">
+          <label class="j-label">Setup</label>
+          <select class="txt-input j-input" id="jSetup">
+            <option>Breakout</option>
+            <option>Pullback</option>
+            <option>Reversal</option>
+            <option>Momentum</option>
+            <option>Earnings</option>
+            <option>Other</option>
+          </select>
+        </div>
+        <div class="j-field">
+          <label class="j-label">Emotion 1-5</label>
+          <input class="txt-input j-input" id="jEmotion" type="number" min="1" max="5" placeholder="3">
+        </div>
+        <div class="j-field j-field-wide">
+          <label class="j-label">Notes</label>
+          <input class="txt-input j-input" id="jNotes" placeholder="Setup rationale, mistakes, lessons...">
+        </div>
+      </div>
+      <div class="err" id="jErr"></div>
+      <button class="btn btn-primary" id="jSaveBtn" onclick="saveJTrade()" style="margin-top:8px">LOG TRADE</button>
+    </div>
+  </div>
+
+  <!-- Filters -->
+  <div class="j-filters">
+    <input class="txt-input ticker" id="jFilterTicker" placeholder="Filter ticker" style="flex:0 0 120px">
+    <input class="txt-input" id="jFilterFrom" type="date" style="flex:0 0 140px">
+    <input class="txt-input" id="jFilterTo" type="date" style="flex:0 0 140px">
+    <button class="btn btn-ghost" onclick="loadJournal()">Filter</button>
+    <button class="btn btn-ghost" onclick="clearJFilters()">Clear</button>
+  </div>
+
+  <!-- Table -->
+  <div class="card" style="overflow-x:auto">
+    <div id="jTableWrap">
+      <div style="padding:40px;text-align:center;color:var(--text-muted);font-family:'DM Mono',monospace;font-size:12px">No trades yet — log your first trade above.</div>
+    </div>
+  </div>
+</div>
+
 <div class="disclaimer"><strong>Not financial advice.</strong> Educational purposes only. Always do your own analysis before trading.</div>
 </div>
 
@@ -569,11 +685,12 @@ setInterval(updateClock,1000); updateClock();
 
 // ===== TABS =====
 function switchTab(tab){
-  const tabs=['screener','watchlist','scanner','scenarios','chart'];
-  document.querySelectorAll('.tab').forEach((t,i)=>t.classList.toggle('active',tabs[i]===tab));
+  const tabs=['screener','watchlist','scanner','scenarios','chart','journal'];
+  document.querySelectorAll('.tabs>.tab').forEach((t,i)=>t.classList.toggle('active',tabs[i]===tab));
   document.querySelectorAll('.panel').forEach(p=>p.classList.remove('active'));
   document.getElementById('panel-'+tab).classList.add('active');
   if(tab==='scenarios'&&!document.getElementById('scenariosContainer').innerHTML)loadScenarios();
+  if(tab==='journal')loadJournal();
 }
 
 // ===== WATCHLIST STATE (localStorage) =====
@@ -935,6 +1052,156 @@ function showToast(msg){
 
 // Init watchlist
 renderWatchlistChips();
+</script>
+
+<script>
+// ===== JOURNAL =====
+let jFormVisible = true;
+
+function toggleJForm(){
+  jFormVisible = !jFormVisible;
+  document.getElementById('jFormBody').style.display = jFormVisible ? 'block' : 'none';
+  document.querySelector('#jFormCard .card-hdr button').textContent = jFormVisible ? '▲ Hide' : '▼ Show';
+}
+
+function clearJFilters(){
+  document.getElementById('jFilterTicker').value = '';
+  document.getElementById('jFilterFrom').value   = '';
+  document.getElementById('jFilterTo').value     = '';
+  loadJournal();
+}
+
+let jLoaded = false;
+
+async function loadJournal(){
+  const ticker = document.getElementById('jFilterTicker').value.trim();
+  const from   = document.getElementById('jFilterFrom').value;
+  const to     = document.getElementById('jFilterTo').value;
+  const params = new URLSearchParams();
+  if(ticker) params.set('ticker', ticker);
+  if(from)   params.set('from', from);
+  if(to)     params.set('to', to);
+
+  try {
+    const res  = await fetch('/api/journal?' + params.toString());
+    const data = await res.json();
+    if(data.error){ showJErr(data.error); return; }
+    renderJStats(data.stats);
+    renderJTable(data.trades);
+    jLoaded = true;
+  } catch(e) {
+    showJErr('Could not load journal — please refresh.');
+  }
+}
+
+function renderJStats(s){
+  const el = document.getElementById('jStats');
+  if(s.total === 0){ el.style.display='none'; return; }
+  el.style.display = 'grid';
+  document.getElementById('jTotal').textContent    = s.total;
+  document.getElementById('jWinRate').textContent  = s.win_rate + '%';
+  document.getElementById('jAvgWin').textContent   = (s.avg_win_pct >= 0 ? '+' : '') + s.avg_win_pct + '%';
+  document.getElementById('jAvgLoss').textContent  = s.avg_loss_pct + '%';
+  const pnl = s.total_pnl;
+  const pnlEl = document.getElementById('jTotalPnl');
+  pnlEl.textContent = (pnl >= 0 ? '+$' : '-$') + Math.abs(pnl).toFixed(2);
+  pnlEl.className = 'j-stat-val ' + (pnl >= 0 ? 'green' : 'red');
+}
+
+function renderJTable(trades){
+  const wrap = document.getElementById('jTableWrap');
+  if(!trades.length){
+    wrap.innerHTML='<div style="padding:40px;text-align:center;color:var(--text-muted);font-family:\'DM Mono\',monospace;font-size:12px">No trades match the current filter.</div>';
+    return;
+  }
+  const emojiEmo = v => ['','😰','😟','😐','🙂','😊'][v] || v;
+  const rows = trades.map(t => {
+    const win = t.pnl > 0;
+    const cls = win ? 'j-win' : 'j-loss';
+    const pnlStr = (t.pnl >= 0 ? '+$' : '-$') + Math.abs(t.pnl).toFixed(2);
+    const retStr = (t.return_pct >= 0 ? '+' : '') + t.return_pct.toFixed(2) + '%';
+    return `<tr>
+      <td><span class="j-ticker">${t.ticker}</span></td>
+      <td>${t.trade_date}</td>
+      <td>$${parseFloat(t.entry_price).toFixed(2)}</td>
+      <td>$${parseFloat(t.exit_price).toFixed(2)}</td>
+      <td>${parseFloat(t.position_size).toFixed(0)}</td>
+      <td class="${cls}">${pnlStr}</td>
+      <td class="${cls}">${retStr}</td>
+      <td>${t.setup_type}</td>
+      <td title="Emotion: ${t.emotion}/5">${emojiEmo(t.emotion)}</td>
+      <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;color:var(--text-muted)">${t.notes||''}</td>
+      <td><button class="j-del" onclick="deleteJTrade(${t.id})" title="Delete">✕</button></td>
+    </tr>`;
+  }).join('');
+  wrap.innerHTML = `<table class="j-table">
+    <thead><tr>
+      <th>Ticker</th><th>Date</th><th>Entry</th><th>Exit</th><th>Shares</th>
+      <th>P&L</th><th>Return</th><th>Setup</th><th>Mood</th><th>Notes</th><th></th>
+    </tr></thead>
+    <tbody>${rows}</tbody>
+  </table>`;
+}
+
+function showJErr(msg){
+  const el = document.getElementById('jErr');
+  el.textContent = msg;
+  el.classList.add('show');
+  setTimeout(()=>el.classList.remove('show'), 4000);
+}
+
+async function saveJTrade(){
+  const ticker = document.getElementById('jTicker').value.trim().toUpperCase();
+  const date   = document.getElementById('jDate').value;
+  const entry  = document.getElementById('jEntry').value;
+  const exit   = document.getElementById('jExit').value;
+  const size   = document.getElementById('jSize').value;
+  const setup  = document.getElementById('jSetup').value;
+  const emo    = document.getElementById('jEmotion').value || '3';
+  const notes  = document.getElementById('jNotes').value.trim();
+
+  if(!ticker || !entry || !exit || !size){
+    showJErr('Ticker, entry, exit, and shares are required.'); return;
+  }
+
+  const btn = document.getElementById('jSaveBtn');
+  btn.disabled = true; btn.textContent = 'Saving...';
+  try {
+    const res  = await fetch('/api/journal/add', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({
+        ticker, entry_price: entry, exit_price: exit,
+        position_size: size, setup_type: setup, emotion: emo,
+        notes, trade_date: date || undefined
+      })
+    });
+    const data = await res.json();
+    if(data.error){ showJErr(data.error); return; }
+    // clear form fields
+    ['jTicker','jDate','jEntry','jExit','jSize','jNotes'].forEach(id=>document.getElementById(id).value='');
+    document.getElementById('jEmotion').value = '3';
+    showToast('Trade logged');
+    loadJournal();
+  } catch(e) {
+    showJErr('Save failed — please try again.');
+  } finally {
+    btn.disabled = false; btn.textContent = 'LOG TRADE';
+  }
+}
+
+async function deleteJTrade(id){
+  if(!confirm('Delete this trade?')) return;
+  try {
+    await fetch('/api/journal/'+id, {method:'DELETE'});
+    loadJournal();
+  } catch(e) {
+    showJErr('Delete failed.');
+  }
+}
+
+// Set default date to today
+document.getElementById('jDate').value = new Date().toISOString().slice(0,10);
 </script>
 </body>
 </html>
