@@ -6,6 +6,7 @@ from config import Config
 from datetime import datetime, timedelta
 
 screener_bp = Blueprint('screener', __name__)
+_financials_cache = {}
 
 def get_finnhub_client():
     return finnhub.Client(api_key=Config.FINNHUB_API_KEY)
@@ -333,6 +334,176 @@ Be specific, direct, no fluff."""
             "atr":           round(atr_val, 2),
             "timestamp":     datetime.now().isoformat()
         })
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@screener_bp.route('/financials/<ticker>', methods=['GET'])
+def get_financials(ticker):
+    ticker = ticker.upper().strip()
+    now = datetime.now()
+
+    cached = _financials_cache.get(ticker)
+    if cached and (now - cached['ts']).total_seconds() < 86400:
+        return jsonify(cached['data'])
+
+    try:
+        fc = get_finnhub_client()
+
+        basic   = fc.company_basic_financials(ticker, 'all') or {}
+        metrics = basic.get('metric', {}) or {}
+        series  = basic.get('series', {}) or {}
+        annual  = series.get('annual', {}) or {}
+        qtr     = series.get('quarterly', {}) or {}
+
+        pe        = metrics.get('peNormalizedAnnual') or metrics.get('peTTM')
+        ps        = metrics.get('psTTM')
+        ev_ebitda = metrics.get('evEbitda')
+
+        gross_margin = metrics.get('grossMarginTTM') or metrics.get('grossMarginAnnual')
+        net_margin   = metrics.get('netProfitMarginTTM') or metrics.get('netMarginTTM')
+        roe          = metrics.get('roeTTM') or metrics.get('roeAnnual')
+        debt_equity  = (metrics.get('totalDebt/totalEquityAnnual') or
+                        metrics.get('longTermDebt/equityAnnual'))
+
+        # Revenue growth — prefer direct metric, fall back to series calculation
+        rev_yoy = None
+        raw_yoy = metrics.get('revenueGrowthTTMYoy')
+        if raw_yoy is not None:
+            rev_yoy = round(float(raw_yoy) * 100, 1)
+        else:
+            rev_annual_data = annual.get('revenue', [])
+            if len(rev_annual_data) >= 2:
+                r0 = rev_annual_data[0].get('v') or 0
+                r1 = rev_annual_data[1].get('v') or 0
+                if r1:
+                    rev_yoy = round(((r0 - r1) / abs(r1)) * 100, 1)
+
+        rev_qoq = None
+        raw_qoq = metrics.get('revenueGrowthQuarterlyYoy')
+        if raw_qoq is not None:
+            rev_qoq = round(float(raw_qoq) * 100, 1)
+        else:
+            rev_qtr_data = qtr.get('revenue', [])
+            if len(rev_qtr_data) >= 2:
+                r0 = rev_qtr_data[0].get('v') or 0
+                r1 = rev_qtr_data[1].get('v') or 0
+                if r1:
+                    rev_qoq = round(((r0 - r1) / abs(r1)) * 100, 1)
+
+        earnings = fc.stock_earnings(ticker) or []
+        eps_quarters = []
+        for e in earnings[:4]:
+            eps_quarters.append({
+                'period':       e.get('period', ''),
+                'actual':       e.get('actual'),
+                'estimate':     e.get('estimate'),
+                'surprise_pct': round(float(e.get('surprisePercent') or 0), 1),
+            })
+
+        next_earnings    = None
+        earnings_countdown = None
+        try:
+            cal   = fc.earnings_calendar(
+                _from=(now).strftime('%Y-%m-%d'),
+                to=(now + timedelta(days=120)).strftime('%Y-%m-%d'),
+                symbol=ticker, international=False)
+            items = (cal or {}).get('earningsCalendar', [])
+            if items:
+                next_date_str = items[0].get('date', '')
+                if next_date_str:
+                    next_earnings  = next_date_str
+                    next_dt        = datetime.strptime(next_date_str, '%Y-%m-%d')
+                    days_until     = (next_dt - now).days
+                    earnings_countdown = (f"Earnings in {days_until} days"
+                                          if days_until >= 0 else "Earnings passed")
+        except Exception:
+            pass
+
+        recs       = fc.recommendation_trends(ticker) or []
+        latest_rec = recs[0] if recs else {}
+        strong_buy  = int(latest_rec.get('strongBuy',  0) or 0)
+        buy         = int(latest_rec.get('buy',        0) or 0)
+        hold        = int(latest_rec.get('hold',       0) or 0)
+        sell        = int(latest_rec.get('sell',       0) or 0)
+        strong_sell = int(latest_rec.get('strongSell', 0) or 0)
+        total_recs  = strong_buy + buy + hold + sell + strong_sell
+
+        consensus       = "HOLD"
+        consensus_color = "amber"
+        if total_recs > 0:
+            bull_score = (strong_buy * 2 + buy)        / total_recs
+            bear_score = (strong_sell * 2 + sell)      / total_recs
+            if   bull_score >= 1.5: consensus, consensus_color = "STRONG BUY",  "green"
+            elif bull_score >= 0.8: consensus, consensus_color = "BUY",         "green"
+            elif bear_score >= 1.5: consensus, consensus_color = "STRONG SELL", "red"
+            elif bear_score >= 0.8: consensus, consensus_color = "SELL",        "red"
+
+        ai_verdict = None
+        if Config.ANTHROPIC_API_KEY:
+            try:
+                ac      = get_anthropic_client()
+                profile = fc.company_profile2(symbol=ticker) or {}
+                cname   = profile.get('name', ticker)
+                prompt  = (f"Fundamentals for {ticker} ({cname}): "
+                           f"P/E {pe}, P/S {ps}, EV/EBITDA {ev_ebitda}, "
+                           f"Gross margin {gross_margin}%, Net margin {net_margin}%, ROE {roe}%, "
+                           f"Revenue growth YoY {rev_yoy}% QoQ {rev_qoq}%, "
+                           f"Analyst consensus {consensus} ({strong_buy} SB / {buy} B / {hold} H / {sell} S / {strong_sell} SS). "
+                           f"Next earnings: {next_earnings or 'unknown'}. "
+                           "Write 1-2 plain English sentences for a trader: are fundamentals supportive or concerning? Be specific and direct.")
+                msg = ac.messages.create(
+                    model="claude-haiku-4-5-20251001",
+                    max_tokens=100,
+                    messages=[{"role": "user", "content": prompt}]
+                )
+                ai_verdict = msg.content[0].text.strip()
+            except Exception:
+                pass
+
+        def safe_round(v, d=1):
+            try:
+                return round(float(v), d) if v is not None else None
+            except (TypeError, ValueError):
+                return None
+
+        result = {
+            "ticker": ticker,
+            "valuation": {
+                "pe":       safe_round(pe),
+                "ps":       safe_round(ps),
+                "ev_ebitda":safe_round(ev_ebitda),
+            },
+            "health": {
+                "gross_margin": safe_round(gross_margin),
+                "net_margin":   safe_round(net_margin),
+                "roe":          safe_round(roe),
+                "debt_equity":  safe_round(debt_equity, 2),
+            },
+            "growth": {
+                "rev_yoy": rev_yoy,
+                "rev_qoq": rev_qoq,
+            },
+            "eps_quarters":      eps_quarters,
+            "analyst": {
+                "consensus":       consensus,
+                "consensus_color": consensus_color,
+                "strong_buy":      strong_buy,
+                "buy":             buy,
+                "hold":            hold,
+                "sell":            sell,
+                "strong_sell":     strong_sell,
+                "total":           total_recs,
+            },
+            "next_earnings":     next_earnings,
+            "earnings_countdown":earnings_countdown,
+            "ai_verdict":        ai_verdict,
+            "timestamp":         now.isoformat(),
+        }
+
+        _financials_cache[ticker] = {"data": result, "ts": now}
+        return jsonify(result)
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
