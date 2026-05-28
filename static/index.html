@@ -390,6 +390,46 @@ body::after{content:'';position:fixed;inset:0;background:repeating-linear-gradie
 .fin-verdict{font-size:12px;color:var(--text-dim);line-height:1.7;font-style:italic;}
 .fin-loading{padding:24px;text-align:center;font-family:'DM Mono',monospace;font-size:10px;color:var(--text-muted);letter-spacing:.1em;}
 @media(max-width:640px){.fin-row-3,.fin-row-4{grid-template-columns:repeat(2,1fr);}.eps-grid{grid-template-columns:repeat(2,1fr);}}
+
+/* ===== BREAKOUT SCANNER ===== */
+.brk-card{background:var(--bg2);border:1px solid var(--border);border-radius:12px;overflow:hidden;margin-bottom:10px;animation:fadeUp .35s ease both;}
+.brk-card.IMMINENT{border-color:rgba(255,61,90,.4);box-shadow:0 0 12px rgba(255,61,90,.06);}
+.brk-card.WATCH{border-color:rgba(255,179,0,.4);}
+.brk-card.RADAR{border-color:rgba(0,229,255,.3);}
+.brk-top{padding:14px 18px;display:flex;align-items:flex-start;gap:14px;}
+.brk-ring{width:60px;height:60px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-family:'DM Mono',monospace;font-size:18px;font-weight:500;flex-shrink:0;border:2px solid;}
+.brk-ring.IMMINENT{background:rgba(255,61,90,.1);border-color:rgba(255,61,90,.5);color:var(--red);}
+.brk-ring.WATCH{background:rgba(255,179,0,.1);border-color:rgba(255,179,0,.5);color:var(--amber);}
+.brk-ring.RADAR{background:rgba(0,229,255,.08);border-color:rgba(0,229,255,.4);color:var(--cyan);}
+.brk-info{flex:1;min-width:0;}
+.brk-hrow{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:5px;}
+.brk-ticker{font-family:'DM Mono',monospace;font-size:19px;font-weight:500;}
+.brk-badge{padding:3px 9px;border-radius:5px;font-family:'DM Mono',monospace;font-size:9px;font-weight:600;letter-spacing:.08em;border:1px solid;}
+.brk-badge.IMMINENT{background:rgba(255,61,90,.12);color:var(--red);border-color:rgba(255,61,90,.35);}
+.brk-badge.WATCH{background:rgba(255,179,0,.1);color:var(--amber);border-color:rgba(255,179,0,.35);}
+.brk-badge.RADAR{background:rgba(0,229,255,.08);color:var(--cyan);border-color:rgba(0,229,255,.3);}
+.brk-sigs{display:flex;gap:5px;flex-wrap:wrap;margin-top:5px;}
+.brk-sig{font-family:'DM Mono',monospace;font-size:8px;padding:2px 7px;border-radius:3px;background:var(--bg4);border:1px solid var(--border2);color:var(--text-dim);}
+.brk-why{font-size:11px;color:var(--text-dim);line-height:1.6;margin-top:7px;font-style:italic;}
+.brk-bars{padding:4px 18px 12px;display:grid;grid-template-columns:repeat(4,1fr);gap:8px;}
+.brk-bitem{text-align:center;}
+.brk-blabel{font-family:'DM Mono',monospace;font-size:8px;color:var(--text-muted);letter-spacing:.1em;text-transform:uppercase;margin-bottom:3px;}
+.brk-btrack{height:4px;background:var(--bg5);border-radius:2px;overflow:hidden;}
+.brk-bfill{height:100%;border-radius:2px;}
+.brk-bfill.vol{background:var(--purple);}
+.brk-bfill.prc{background:var(--cyan);}
+.brk-bfill.rsi{background:var(--green);}
+.brk-bfill.str{background:var(--amber);}
+.brk-bval{font-family:'DM Mono',monospace;font-size:9px;color:var(--text-dim);margin-top:3px;}
+.brk-levels{padding:10px 18px;border-top:1px solid var(--border);display:grid;grid-template-columns:repeat(3,1fr);gap:8px;}
+.brk-lvl{background:var(--bg3);border-radius:7px;padding:8px;text-align:center;}
+.brk-actions{padding:8px 18px 14px;display:flex;gap:6px;}
+.brk-legend{font-family:'DM Mono',monospace;font-size:9px;padding:3px 8px;border-radius:4px;letter-spacing:.04em;}
+.brk-legend.IMMINENT{background:rgba(255,61,90,.1);color:var(--red);}
+.brk-legend.WATCH{background:rgba(255,179,0,.1);color:var(--amber);}
+.brk-legend.RADAR{background:rgba(0,229,255,.08);color:var(--cyan);}
+.brk-empty{text-align:center;padding:48px 20px;color:var(--text-muted);font-family:'DM Mono',monospace;font-size:12px;line-height:2;}
+@media(max-width:640px){.brk-bars{grid-template-columns:repeat(2,1fr);}.brk-actions{flex-wrap:wrap;}.brk-actions .btn{flex:1;min-width:0;}}
 </style>
 </head>
 <body>
@@ -422,6 +462,7 @@ body::after{content:'';position:fixed;inset:0;background:repeating-linear-gradie
   <button class="tab" onclick="switchTab('chart')">📊 Chart</button>
   <button class="tab" onclick="switchTab('journal')">📓 Journal</button>
   <button class="tab" onclick="switchTab('alerts')" id="alertsTab">🔔 Alerts<span class="alert-badge" id="alertBadge" style="display:none"></span></button>
+  <button class="tab" onclick="switchTab('breakout')">🚨 Breakout</button>
 </div>
 
 <!-- ===== SCREENER ===== -->
@@ -790,6 +831,35 @@ body::after{content:'';position:fixed;inset:0;background:repeating-linear-gradie
   </div>
 </div>
 
+<!-- ===== BREAKOUT SCANNER ===== -->
+<div class="panel" id="panel-breakout">
+
+  <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
+    <button class="btn btn-primary" id="brkScanBtn" onclick="runBreakoutScan()" style="flex:1">🚨 SCAN WATCHLIST FOR BREAKOUTS</button>
+    <button class="btn btn-ghost" onclick="runTopBreakouts()" style="white-space:nowrap">⚡ Top 20 Stocks</button>
+  </div>
+
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:8px">
+    <div style="font-family:'DM Mono',monospace;font-size:9px;color:var(--text-muted);letter-spacing:.08em" id="brkLastScan">No scan yet — hit the button above</div>
+    <div style="display:flex;gap:5px;flex-wrap:wrap">
+      <span class="brk-legend IMMINENT">🚨 IMMINENT 80+</span>
+      <span class="brk-legend WATCH">⚠ WATCH 60+</span>
+      <span class="brk-legend RADAR">👁 RADAR 40+</span>
+    </div>
+  </div>
+
+  <div class="err" id="brkError"></div>
+  <div class="loading" id="brkLoading">
+    <div class="loading-ticker">🚨</div>
+    <div class="loading-step active">Scoring breakout setups...</div>
+    <div class="loading-step">Checking volume contraction...</div>
+    <div class="loading-step">Measuring price tightening...</div>
+    <div class="loading-step">Validating RSI launch zone...</div>
+  </div>
+
+  <div id="brkResults"></div>
+</div>
+
 <div class="disclaimer"><strong>Not financial advice.</strong> Educational purposes only. Always do your own analysis before trading.</div>
 </div>
 
@@ -820,7 +890,7 @@ setInterval(updateClock,1000); updateClock();
 
 // ===== TABS =====
 function switchTab(tab){
-  const tabs=['screener','watchlist','scanner','scenarios','chart','journal','alerts'];
+  const tabs=['screener','watchlist','scanner','scenarios','chart','journal','alerts','breakout'];
   document.querySelectorAll('.tabs>.tab').forEach((t,i)=>t.classList.toggle('active',tabs[i]===tab));
   document.querySelectorAll('.panel').forEach(p=>p.classList.remove('active'));
   document.getElementById('panel-'+tab).classList.add('active');
@@ -2304,5 +2374,128 @@ function renderWlResults(results) {
         </div>`;
       }).join('')}
     </div>`;
+}
+
+// ===== BREAKOUT SCANNER =====
+let _brkTimer = null;
+let _brkLastUrl = null;
+let _brkLastBody = null;
+let _brkLastMethod = 'POST';
+
+async function runBreakoutScan(){
+  if(!watchlist.length){
+    showToast('Add tickers to your watchlist first');
+    return;
+  }
+  await _doBreakoutScan('/api/breakout/scan',{tickers:watchlist},'POST');
+}
+
+async function runTopBreakouts(){
+  await _doBreakoutScan('/api/breakout/top',null,'GET');
+}
+
+async function _doBreakoutScan(url,body,method){
+  _brkLastUrl=url; _brkLastBody=body; _brkLastMethod=method;
+  const btn=document.getElementById('brkScanBtn');
+  btn.disabled=true;
+  document.getElementById('brkError').classList.remove('show');
+  document.getElementById('brkLoading').classList.add('show');
+  document.getElementById('brkResults').innerHTML='';
+
+  // Animate loading steps
+  const steps=document.querySelectorAll('#brkLoading .loading-step');
+  let si=0;
+  const iv=setInterval(()=>{
+    if(si>0&&steps[si-1]){steps[si-1].className='loading-step done';steps[si-1].textContent='[✓] '+steps[si-1].textContent.replace('[→] ','');}
+    if(steps[si]){steps[si].className='loading-step active';steps[si].textContent='[→] '+steps[si].textContent.replace('[ ] ','');}
+    si++;
+    if(si>=steps.length)clearInterval(iv);
+  },1400);
+
+  try{
+    const opts=method==='POST'
+      ?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}
+      :{method:'GET'};
+    const res=await fetch(url,opts);
+    const data=await res.json();
+    clearInterval(iv);
+    if(data.error)throw new Error(data.error);
+    renderBreakoutResults(data);
+    const now=new Date();
+    document.getElementById('brkLastScan').textContent=
+      `Scanned ${data.scanned} tickers · ${data.found} setup${data.found!==1?'s':''} found · `+
+      now.toLocaleTimeString('en-SG',{hour:'2-digit',minute:'2-digit',timeZone:'Asia/Singapore'})+' SGT · auto-refresh in 30 min';
+    // Schedule auto-refresh
+    if(_brkTimer)clearTimeout(_brkTimer);
+    _brkTimer=setTimeout(()=>{
+      if(document.getElementById('panel-breakout').classList.contains('active'))
+        _doBreakoutScan(url,body,method);
+    },30*60*1000);
+  }catch(e){
+    clearInterval(iv);
+    const er=document.getElementById('brkError');
+    er.textContent='⚠ '+friendlyError(e.message);
+    er.classList.add('show');
+  }finally{
+    btn.disabled=false;
+    document.getElementById('brkLoading').classList.remove('show');
+  }
+}
+
+function renderBreakoutResults(data){
+  const el=document.getElementById('brkResults');
+  const results=data.results||[];
+  if(!results.length){
+    el.innerHTML=`<div class="brk-empty">
+      No setups scoring 40+ found in this list.<br>
+      Try <strong style="color:var(--cyan)">⚡ Top 20 Stocks</strong> for pre-screened momentum names,<br>
+      or add more tickers to your watchlist.
+    </div>`;
+    return;
+  }
+  el.innerHTML=results.map((r,i)=>{
+    const sb=r.score_breakdown||{};
+    const vW=Math.round((sb.volume/30)*100);
+    const pW=Math.round((sb.price/30)*100);
+    const rW=Math.round((sb.rsi/20)*100);
+    const sW=Math.round((sb.structure/20)*100);
+    const chg=r.price_change||0;
+    return `<div class="brk-card ${r.alert_level}" style="animation-delay:${i*.07}s">
+      <div class="brk-top">
+        <div class="brk-ring ${r.alert_level}">${r.score}</div>
+        <div class="brk-info">
+          <div class="brk-hrow">
+            <span class="brk-ticker">${r.ticker}</span>
+            <span class="brk-badge ${r.alert_level}">${r.alert_emoji} ${r.alert_level}</span>
+            <span style="font-family:'DM Mono',monospace;font-size:11px;color:var(--text-dim)">
+              $${r.price} <span class="${chg>=0?'price-chg up':'price-chg down'}">${chg>=0?'+':''}${chg}%</span>
+            </span>
+            <span style="font-family:'DM Mono',monospace;font-size:9px;color:var(--text-muted)">${r.pct_from_high}% from 52wk high</span>
+          </div>
+          <div class="brk-sigs">${(r.signals||[]).map(s=>`<span class="brk-sig">${s}</span>`).join('')}</div>
+          <div class="brk-why">${r.why}</div>
+        </div>
+      </div>
+
+      <div class="brk-bars">
+        <div class="brk-bitem"><div class="brk-blabel">Volume</div><div class="brk-btrack"><div class="brk-bfill vol" style="width:${vW}%"></div></div><div class="brk-bval">${sb.volume}/30</div></div>
+        <div class="brk-bitem"><div class="brk-blabel">Tightening</div><div class="brk-btrack"><div class="brk-bfill prc" style="width:${pW}%"></div></div><div class="brk-bval">${sb.price}/30</div></div>
+        <div class="brk-bitem"><div class="brk-blabel">RSI Zone</div><div class="brk-btrack"><div class="brk-bfill rsi" style="width:${rW}%"></div></div><div class="brk-bval">${sb.rsi}/20</div></div>
+        <div class="brk-bitem"><div class="brk-blabel">Structure</div><div class="brk-btrack"><div class="brk-bfill str" style="width:${sW}%"></div></div><div class="brk-bval">${sb.structure}/20</div></div>
+      </div>
+
+      <div class="brk-levels">
+        <div class="brk-lvl"><div class="level-label entry">Entry</div><div class="level-price">${r.entry}</div><div class="level-note">Current price</div></div>
+        <div class="brk-lvl"><div class="level-label stop">Stop</div><div class="level-price">${r.stop}</div><div class="level-note">1.5× ATR</div></div>
+        <div class="brk-lvl"><div class="level-label target">Target</div><div class="level-price">${r.target}</div><div class="level-note">${r.rr}:1 R/R</div></div>
+      </div>
+
+      <div class="brk-actions">
+        <button class="btn btn-primary" style="flex:1;font-size:10px;padding:8px" onclick="quickAnalyse('${r.ticker}')">📊 Full Analysis</button>
+        <button class="btn btn-ghost" style="flex:1;font-size:10px;padding:8px" onclick="document.getElementById('chartInput').value='${r.ticker}';switchTab('chart');loadChart()">📈 Chart</button>
+        <button class="btn btn-ghost" style="font-size:10px;padding:8px 12px" onclick="addTicker('${r.ticker}');showToast('${r.ticker} added to watchlist')">+ WL</button>
+      </div>
+    </div>`;
+  }).join('');
 }
 </script>
