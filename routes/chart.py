@@ -284,7 +284,7 @@ def get_chart_data(ticker):
                 "signals_count":   signals_count,
             },
             "explanations": explanations,
-            "current_price": current_price,
+            "current_price": round(current_price, 2),
             "timestamp": datetime.now().isoformat()
         })
 

@@ -104,7 +104,7 @@ def detect_signal(closes, highs, lows, rsi, macd_line, ema20, ema50, volumes):
 
     # REVERSAL BUY: CHoCH + RSI divergence + MACD turning up
     if (rsi and rsi < 45 and
-        macd_line and macd_line > -2 and
+        macd_line is not None and macd_line > -2 and
         ema20 and current > ema20 * 0.97 and
         rsi_divergence):
         return "REVERSAL_BUY", "Trend reversal signal — RSI divergence forming with MACD turning up"
@@ -113,7 +113,7 @@ def detect_signal(closes, highs, lows, rsi, macd_line, ema20, ema50, volumes):
     if (ema20 and ema50 and
         current > ema20 and current > ema50 and
         vol_spike and
-        macd_line and macd_line > 0):
+        macd_line is not None and macd_line > 0):
         return "BREAKOUT_BUY", "Breakout confirmed — price above EMAs with volume surge and positive MACD"
 
     # MEAN REVERSION BUY: At lower Bollinger + RSI oversold
@@ -129,7 +129,7 @@ def detect_signal(closes, highs, lows, rsi, macd_line, ema20, ema50, volumes):
     # SELL / SHORT: Below all EMAs + MACD negative + volume down
     if (ema20 and ema50 and
         current < ema20 and current < ema50 and
-        macd_line and macd_line < -1):
+        macd_line is not None and macd_line < -1):
         return "SELL", "Bearish setup — price below EMAs with negative MACD momentum"
 
     return "HOLD", "No clear signal — wait for better confluence"
@@ -206,7 +206,7 @@ def analyse_ticker(ticker):
         else:
             rsi_val, rsi_bias = "N/A", "neutral"
 
-        if macd_line:
+        if macd_line is not None:
             if macd_line > 0: macd_val, macd_bias = f"+{macd_line} · Bullish", "bull"
             else:             macd_val, macd_bias = f"{macd_line} · Bearish", "bear"
         else:
@@ -312,7 +312,7 @@ Be specific, direct, no fluff."""
             "ticker":        ticker,
             "company":       company_name,
             "sector":        sector,
-            "price":         current_price,
+            "price":         round(current_price, 2),
             "price_change":  price_change,
             "tier":          tier,
             "signal":        signal,

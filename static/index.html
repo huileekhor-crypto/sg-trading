@@ -9,7 +9,7 @@
 :root {
   --bg:#08090C;--bg2:#0D0F14;--bg3:#12151C;--bg4:#181C26;--bg5:#1E2330;
   --border:#1F2535;--border2:#2A3348;
-  --text:#C8D8F0;--text-dim:#6B7FA0;--text-muted:#374560;
+  --text:#C8D8F0;--text-dim:#8898B8;--text-muted:#5A6E88;
   --cyan:#00E5FF;--cyan2:#00A8CC;--green:#00E676;--red:#FF3D5A;
   --amber:#FFB300;--purple:#BB86FC;--blue:#448AFF;
 }
@@ -270,7 +270,25 @@ body::after{content:'';position:fixed;inset:0;background:repeating-linear-gradie
 
 .disclaimer{margin-top:28px;padding:10px 14px;background:rgba(255,179,0,.04);border:1px solid rgba(255,179,0,.1);border-radius:8px;font-size:11px;color:var(--text-muted);line-height:1.6;text-align:center;}
 .disclaimer strong{color:var(--amber);}
-@media(max-width:500px){.scores-grid,.levels-row{grid-template-columns:1fr;}.tab{font-size:9px;padding:7px 4px;}}
+@media(max-width:640px){
+  .scores-grid,.levels-row{grid-template-columns:1fr;}
+  .tab{font-size:9px;padding:7px 4px;}
+  .signals-grid{grid-template-columns:repeat(auto-fill,minmax(130px,1fr));}
+  .card-top{flex-direction:column-reverse;align-items:flex-start;}
+  .chart-tabs{flex-wrap:wrap;gap:4px;}
+  .scan-all-row{flex-direction:column;}
+  .sc-sigs{grid-template-columns:1fr;}
+  .s-score{font-size:36px;}
+  .stock-item{grid-template-columns:auto 1fr;gap:8px;}
+}
+@media(max-width:420px){
+  #hDate,#hTime{display:none;}
+  .wrap{padding:12px 10px 60px;}
+  .card-top,.signal-banner{padding:12px;}
+  .levels-row,.scores-grid{padding:12px;}
+  .signals-grid{padding:12px;}
+  .analysis-block{padding:10px 12px;}
+}
 </style>
 </head>
 <body>
@@ -670,7 +688,7 @@ function renderWlResults(results){
         return `<div class="stock-item" style="animation-delay:${i*.06}s;cursor:pointer" onclick="quickAnalyse('${d.ticker}')">
           <div>
             <div class="s-ticker">${d.ticker}</div>
-            <div style="font-family:'DM Mono',monospace;font-size:10px;margin-top:4px;color:var(--text-dim)">$${d.price} <span class="${chg>=0?'price-chg up':'price-chg down'}">${chg>=0?'+':''}${chg}%</span></div>
+            <div style="font-family:'DM Mono',monospace;font-size:10px;margin-top:4px;color:var(--text-dim)">$${parseFloat(d.price).toFixed(2)} <span class="${chg>=0?'price-chg up':'price-chg down'}">${chg>=0?'+':''}${chg}%</span></div>
           </div>
           <div>
             <div style="font-size:12px;font-weight:500;color:var(--${sc==='green'?'green':sc==='red'?'red':sc==='amber'?'amber':sc==='cyan'?'cyan':'text-dim'})">${d.signal_label}</div>
@@ -697,6 +715,24 @@ function loadPreset(key){
   tickers.forEach(addTicker);
   switchTab('watchlist');
   showToast(tickers.length+' tickers added');
+}
+
+// ===== ERROR MESSAGES =====
+function friendlyError(msg) {
+  if (!msg) return 'An unexpected error occurred — please try again.';
+  if (msg.includes('API_KEY') || msg.includes('not configured'))
+    return 'Service unavailable — the API key has not been set up on the server yet.';
+  if (msg.toLowerCase().includes('failed to fetch') || msg.toLowerCase().includes('networkerror'))
+    return 'Network error — check your connection and try again.';
+  if (msg.includes('call1_research') || msg.includes('call2_structure'))
+    return 'AI market scan failed — the research service is temporarily unavailable. Please try again.';
+  if (msg.includes('No market data returned'))
+    return 'Market scan returned no data — please try again or select a different region.';
+  if (msg.includes('Structured output not returned'))
+    return 'AI response was malformed — please try again.';
+  if (msg.includes('Authentication required'))
+    return 'Session expired — please refresh the page and log in again.';
+  return msg;
 }
 
 // ===== SCREENER =====
@@ -733,7 +769,7 @@ async function runScreener(){
   }catch(e){
     clearInterval(iv);
     const er=document.getElementById('screenerError');
-    er.textContent='⚠ '+e.message;
+    er.textContent='⚠ '+friendlyError(e.message);
     er.classList.add('show');
   }finally{
     btn.disabled=false;
@@ -743,7 +779,7 @@ async function runScreener(){
 
 function renderScreener(d){
   document.getElementById('resTicker').textContent=d.ticker;
-  document.getElementById('resPrice').textContent=`$${d.price}`;
+  document.getElementById('resPrice').textContent=`$${parseFloat(d.price).toFixed(2)}`;
   const chg=d.price_change;
   const chgEl=document.getElementById('resPriceChg');
   chgEl.textContent=`${chg>=0?'+':''}${chg}%`;
@@ -808,7 +844,7 @@ async function runScan(){
     renderScan(data);
   }catch(e){
     const er=document.getElementById('scannerError');
-    er.textContent='⚠ '+e.message; er.classList.add('show');
+    er.textContent='⚠ '+friendlyError(e.message); er.classList.add('show');
   }finally{
     btn.disabled=false; btn.textContent='⚡ SCAN MARKET NOW';
     document.getElementById('scannerLoading').classList.remove('show');
@@ -866,7 +902,7 @@ async function loadScenarios(){
     const data=await res.json();
     renderScenarios(data);
   }catch(e){
-    document.getElementById('scenariosContainer').innerHTML=`<div class="err show">Failed: ${e.message}</div>`;
+    document.getElementById('scenariosContainer').innerHTML=`<div class="err show">Failed: ${friendlyError(e.message)}</div>`;
   }
 }
 
@@ -985,7 +1021,7 @@ async function loadChart() {
     renderChart(data);
   } catch(e) {
     const er = document.getElementById('chartError');
-    er.textContent = '⚠ ' + e.message;
+    er.textContent = '⚠ ' + friendlyError(e.message);
     er.classList.add('show');
   } finally {
     document.getElementById('chartLoading').classList.remove('show');
@@ -1027,7 +1063,7 @@ function renderChart(d) {
         <div>
           <div class="pb-title">Pre-Breakout Detector — ${d.ticker}</div>
           <div style="font-size:12px;color:var(--text-dim);margin-top:4px">
-            ${pb.signals_count} of 5 signals active · Current price $${d.current_price}
+            ${pb.signals_count} of 5 signals active · Current price $${parseFloat(d.current_price).toFixed(2)}
           </div>
         </div>
         <div>
@@ -1048,7 +1084,7 @@ function renderChart(d) {
     <div class="chart-wrap">
       <div class="chart-hdr">
         <div class="chart-title">📊 Price Chart — ${d.ticker}</div>
-        <div class="chart-price">$${d.current_price}</div>
+        <div class="chart-price">$${parseFloat(d.current_price).toFixed(2)}</div>
       </div>
       <div class="chart-tabs">
         <button class="chart-tab active" onclick="showChartPanel('price','${d.ticker}')">Price + BBands</button>
@@ -1172,7 +1208,7 @@ function drawPriceChart(d) {
     const y = pad.top + (i/4) * ch;
     ctx.beginPath(); ctx.moveTo(pad.left, y); ctx.lineTo(pad.left+cw, y); ctx.stroke();
     const val = maxV - (i/4) * range;
-    ctx.fillStyle = '#374560';
+    ctx.fillStyle = '#6A7B95';
     ctx.font = '9px DM Mono, monospace';
     ctx.textAlign = 'right';
     ctx.fillText('$'+val.toFixed(2), pad.left-4, y+3);
@@ -1252,7 +1288,7 @@ function drawPriceChart(d) {
   }
 
   // X axis labels (every ~10 days)
-  ctx.fillStyle = '#374560'; ctx.font = '8px DM Mono'; ctx.textAlign = 'center';
+  ctx.fillStyle = '#6A7B95'; ctx.font = '8px DM Mono'; ctx.textAlign = 'center';
   for (let i = 0; i < n; i += Math.ceil(n/8)) {
     ctx.fillText(dates[i], xPos(i), H - 8);
   }
@@ -1293,7 +1329,7 @@ function drawVolumeChart(d) {
     ctx.fillRect(x-barW/2, pad.top+ch-barH, barW, barH);
   }
   // X labels
-  ctx.fillStyle='#374560'; ctx.font='8px DM Mono'; ctx.textAlign='center';
+  ctx.fillStyle='#6A7B95'; ctx.font='8px DM Mono'; ctx.textAlign='center';
   for(let i=0;i<n;i+=Math.ceil(n/8)) ctx.fillText(d.dates[i], pad.left+(i/(n-1))*cw, H-8);
 
   document.getElementById('chartLegend').innerHTML=`<div class="legend-item"><div class="legend-dot" style="background:rgba(0,229,255,0.7)"></div>Spike (1.5x avg)</div><div class="legend-item"><div class="legend-dot" style="background:rgba(255,179,0,0.4)"></div>Average volume</div>`;
@@ -1319,7 +1355,7 @@ function drawRsiChart(d) {
     ctx.beginPath(); ctx.moveTo(pad.left,y); ctx.lineTo(pad.left+cw,y);
     ctx.strokeStyle=lvl===50?'rgba(255,179,0,0.3)':'rgba(100,120,150,0.3)';
     ctx.lineWidth=1; ctx.setLineDash(lvl===50?[]:[3,3]); ctx.stroke(); ctx.setLineDash([]);
-    ctx.fillStyle='#374560'; ctx.font='8px DM Mono'; ctx.textAlign='right';
+    ctx.fillStyle='#6A7B95'; ctx.font='8px DM Mono'; ctx.textAlign='right';
     ctx.fillText(lvl, pad.left-4, y+3);
   });
 
@@ -1333,7 +1369,7 @@ function drawRsiChart(d) {
   }
   ctx.strokeStyle='#00E5FF'; ctx.lineWidth=2; ctx.stroke();
 
-  ctx.fillStyle='#374560'; ctx.font='8px DM Mono'; ctx.textAlign='center';
+  ctx.fillStyle='#6A7B95'; ctx.font='8px DM Mono'; ctx.textAlign='center';
   for(let i=0;i<n;i+=Math.ceil(n/8)) ctx.fillText(d.dates[i], pad.left+(i/(n-1))*cw, H-8);
 
   document.getElementById('chartLegend').innerHTML=`<div class="legend-item"><div class="legend-dot" style="background:rgba(255,61,90,0.3)"></div>Overbought (>70)</div><div class="legend-item"><div class="legend-dot" style="background:rgba(0,230,118,0.3)"></div>Oversold (<30)</div><div class="legend-item"><div class="legend-dot" style="background:#FFB300"></div>Midline (50)</div>`;
@@ -1388,7 +1424,7 @@ function drawMacdChart(d) {
   }
   ctx.strokeStyle='#FF3D5A'; ctx.lineWidth=1.5; ctx.stroke();
 
-  ctx.fillStyle='#374560'; ctx.font='8px DM Mono'; ctx.textAlign='center';
+  ctx.fillStyle='#6A7B95'; ctx.font='8px DM Mono'; ctx.textAlign='center';
   for(let i=0;i<n;i+=Math.ceil(n/8)) ctx.fillText(d.dates[i], pad.left+(i/(n-1))*cw, H-8);
 
   document.getElementById('chartLegend').innerHTML=`<div class="legend-item"><div class="legend-dot" style="background:#00E5FF"></div>MACD Line</div><div class="legend-item"><div class="legend-dot" style="background:#FF3D5A"></div>Signal Line</div><div class="legend-item"><div class="legend-dot" style="background:rgba(0,230,118,0.5)"></div>Histogram +</div><div class="legend-item"><div class="legend-dot" style="background:rgba(255,61,90,0.5)"></div>Histogram -</div>`;
@@ -1457,7 +1493,7 @@ async function generateAiWatchlist() {
     renderAiWatchlist(data);
   } catch(e) {
     const er = document.getElementById('aiWlError');
-    er.textContent = '⚠ ' + e.message; er.classList.add('show');
+    er.textContent = '⚠ ' + friendlyError(e.message); er.classList.add('show');
   } finally {
     btn.disabled = false; btn.textContent = '🤖 GENERATE AI WATCHLIST';
     document.getElementById('aiWlLoading').classList.remove('show');
