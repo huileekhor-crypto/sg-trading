@@ -4,9 +4,11 @@ import anthropic
 import yfinance as yf
 from config import Config
 from datetime import datetime, timedelta
+from utils.price_fetcher import get_live_price
 
 screener_bp = Blueprint('screener', __name__)
 _financials_cache = {}
+_price_cache = {}
 
 def get_finnhub_client():
     return finnhub.Client(api_key=Config.FINNHUB_API_KEY)
@@ -172,9 +174,14 @@ def analyse_ticker(ticker):
         highs   = candles['h']
         lows    = candles['l']
         volumes = candles['v']
-        current_price = closes[-1]
-        prev_price    = closes[-2] if len(closes) > 1 else closes[-1]
-        price_change  = round(((current_price - prev_price) / prev_price) * 100, 2)
+
+        live = get_live_price(ticker)
+        hist_price   = round(closes[-1], 2)
+        current_price = live.get('price') or hist_price
+        hist_prev     = closes[-2] if len(closes) > 1 else closes[-1]
+        price_change  = (live.get('change_pct')
+                         if live.get('price')
+                         else round(((hist_price - hist_prev) / hist_prev) * 100, 2))
 
         ema20  = calculate_ema(closes, 20)
         ema50  = calculate_ema(closes, 50)
@@ -189,7 +196,7 @@ def analyse_ticker(ticker):
         vol_ratio   = current_vol / avg_vol if avg_vol > 0 else 1
 
         if vol_ratio > 1.5:
-            vol_val, vol_bias = "Spike 🔥", "bull" if current_price > prev_price else "bear"
+            vol_val, vol_bias = "Spike 🔥", "bull" if current_price > hist_prev else "bear"
         elif vol_ratio > 1.0:
             vol_val, vol_bias = f"Above avg ({round(vol_ratio,1)}x)", "bull"
         else:
@@ -314,6 +321,15 @@ Be specific, direct, no fluff."""
             "company":       company_name,
             "sector":        sector,
             "price":         round(current_price, 2),
+            "change":        live.get('change', round(current_price - hist_prev, 2)),
+            "change_pct":    price_change,
+            "high":          live.get('high', round(highs[-1], 2)),
+            "low":           live.get('low', round(lows[-1], 2)),
+            "open":          live.get('open', round(candles['o'][-1], 2)),
+            "prev_close":    live.get('prev_close', round(hist_prev, 2)),
+            "volume":        live.get('volume', volumes[-1] if volumes else 0),
+            "market_status": live.get('market_status', 'UNKNOWN'),
+            "price_source":  live.get('source', 'yfinance'),
             "price_change":  price_change,
             "tier":          tier,
             "signal":        signal,
@@ -337,6 +353,18 @@ Be specific, direct, no fluff."""
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+
+@screener_bp.route('/price/<ticker>', methods=['GET'])
+def get_price(ticker):
+    ticker = ticker.upper().strip()
+    now = datetime.now()
+    cached = _price_cache.get(ticker)
+    if cached and (now - cached['ts']).total_seconds() < 3:
+        return jsonify(cached['data'])
+    data = get_live_price(ticker)
+    _price_cache[ticker] = {"data": data, "ts": now}
+    return jsonify(data)
 
 
 @screener_bp.route('/financials/<ticker>', methods=['GET'])

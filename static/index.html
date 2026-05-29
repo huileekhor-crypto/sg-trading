@@ -83,6 +83,15 @@ body::after{content:'';position:fixed;inset:0;background:repeating-linear-gradie
 .price-chg{font-family:'DM Mono',monospace;font-size:13px;}
 .price-chg.up{color:var(--green);}
 .price-chg.down{color:var(--red);}
+.market-badge{display:inline-block;font-family:'DM Mono',monospace;font-size:9px;letter-spacing:.1em;padding:2px 7px;border-radius:4px;font-weight:600;margin-left:6px;vertical-align:middle;}
+.market-badge.open{background:rgba(0,200,83,.15);color:#00c853;border:1px solid rgba(0,200,83,.3);}
+.market-badge.pre{background:rgba(255,179,0,.15);color:var(--amber);border:1px solid rgba(255,179,0,.3);}
+.market-badge.after{background:rgba(68,138,255,.15);color:var(--blue);border:1px solid rgba(68,138,255,.3);}
+.market-badge.closed{background:rgba(255,255,255,.06);color:var(--text-muted);border:1px solid var(--border);}
+.ohlcv-row{font-family:'DM Mono',monospace;font-size:10px;color:var(--text-dim);margin-top:5px;display:flex;gap:14px;flex-wrap:wrap;}
+.price-updated-txt{font-family:'DM Mono',monospace;font-size:9px;color:var(--text-muted);}
+@keyframes priceFlash{0%{color:inherit;}40%{color:#ff9800;}100%{color:inherit;}}
+.price-flash{animation:priceFlash 1s ease;}
 
 /* Signal banner */
 .signal-banner{padding:14px 18px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:14px;}
@@ -515,7 +524,14 @@ body::after{content:'';position:fixed;inset:0;background:repeating-linear-gradie
         <div class="price-row">
           <div class="card-price" id="resPrice">—</div>
           <div class="price-chg" id="resPriceChg">—</div>
+          <span class="market-badge closed" id="resMarketStatus" style="display:none"></span>
         </div>
+        <div class="ohlcv-row" id="resOhlcvRow" style="display:none">
+          <span>H: <span id="resHigh">—</span></span>
+          <span>L: <span id="resLow">—</span></span>
+          <span>Vol: <span id="resVolume">—</span></span>
+        </div>
+        <div style="margin-top:3px"><span class="price-updated-txt" id="resPriceUpdated" style="display:none"></span></div>
         <div class="card-company" id="resName">—</div>
         <div class="card-sector" id="resSector">—</div>
       </div>
@@ -1109,11 +1125,15 @@ let lastResult=null;
 async function runScreener(){
   const ticker=document.getElementById('tickerInput').value.trim().toUpperCase();
   if(!ticker)return;
+  stopPriceRefresh();
   const btn=document.getElementById('screenBtn');
   btn.disabled=true;
   document.getElementById('screenerError').classList.remove('show');
   document.getElementById('resultCard').classList.remove('show');
   document.getElementById('financialsCard').classList.remove('show');
+  document.getElementById('resOhlcvRow').style.display='none';
+  document.getElementById('resMarketStatus').style.display='none';
+  const upd=document.getElementById('resPriceUpdated');if(upd)upd.style.display='none';
   const loadEl=document.getElementById('screenerLoading');
   loadEl.classList.add('show');
   document.getElementById('loadingTicker').textContent=ticker;
@@ -1149,13 +1169,111 @@ async function runScreener(){
   }
 }
 
+function fmtVolume(v){
+  if(!v)return'—';
+  if(v>=1e9)return(v/1e9).toFixed(2)+'B';
+  if(v>=1e6)return(v/1e6).toFixed(2)+'M';
+  if(v>=1e3)return(v/1e3).toFixed(0)+'K';
+  return String(v);
+}
+
+function marketBadgeClass(status){
+  if(!status)return'closed';
+  const s=status.toUpperCase();
+  if(s==='REGULAR'||s==='OPEN')return'open';
+  if(s.includes('PRE'))return'pre';
+  if(s.includes('POST')||s.includes('AFTER'))return'after';
+  return'closed';
+}
+
+function marketBadgeLabel(status){
+  if(!status)return'MARKET CLOSED';
+  const s=status.toUpperCase();
+  if(s==='REGULAR'||s==='OPEN')return'MARKET OPEN';
+  if(s==='PRE')return'PRE-MARKET';
+  if(s==='PREPRE')return'PRE-MARKET';
+  if(s.includes('POST')||s.includes('AFTER'))return'AFTER-HOURS';
+  return'MARKET CLOSED';
+}
+
+let _priceRefreshTimer=null;
+let _priceAgeTimer=null;
+let _priceUpdatedAt=null;
+let _lastPrice=null;
+let _refreshTicker=null;
+
+function startPriceRefresh(ticker){
+  stopPriceRefresh();
+  _refreshTicker=ticker;
+  _priceUpdatedAt=Date.now();
+  _lastPrice=null;
+  updatePriceAge();
+  _priceAgeTimer=setInterval(updatePriceAge,1000);
+  _priceRefreshTimer=setInterval(async()=>{
+    if(!_refreshTicker)return;
+    try{
+      const res=await fetch(`/api/price/${_refreshTicker}`);
+      const data=await res.json();
+      if(!data.price)return;
+      const priceEl=document.getElementById('resPrice');
+      if(_lastPrice!==null&&_lastPrice!==data.price){
+        priceEl.classList.remove('price-flash');
+        void priceEl.offsetWidth;
+        priceEl.classList.add('price-flash');
+        setTimeout(()=>priceEl.classList.remove('price-flash'),1000);
+      }
+      _lastPrice=data.price;
+      applyPriceData(data);
+      _priceUpdatedAt=Date.now();
+    }catch(e){console.warn('Price refresh:',e);}
+  },15000);
+}
+
+function stopPriceRefresh(){
+  if(_priceRefreshTimer){clearInterval(_priceRefreshTimer);_priceRefreshTimer=null;}
+  if(_priceAgeTimer){clearInterval(_priceAgeTimer);_priceAgeTimer=null;}
+  _refreshTicker=null;
+}
+
+function updatePriceAge(){
+  const el=document.getElementById('resPriceUpdated');
+  if(!el||!_priceUpdatedAt)return;
+  const s=Math.round((Date.now()-_priceUpdatedAt)/1000);
+  el.textContent=`Updated ${s}s ago`;
+  el.style.display='';
+}
+
+function applyPriceData(data){
+  if(data.price){
+    document.getElementById('resPrice').textContent=`$${parseFloat(data.price).toFixed(2)}`;
+  }
+  const chgAbs=data.change;
+  const chgPct=data.change_pct??data.price_change;
+  if(chgAbs!==undefined&&chgPct!==undefined){
+    const chgEl=document.getElementById('resPriceChg');
+    const up=chgAbs>=0;
+    const arrow=up?'▲':'▼';
+    chgEl.textContent=`${arrow} ${up?'+':''}${parseFloat(chgAbs).toFixed(2)} (${up?'+':''}${parseFloat(chgPct).toFixed(2)}%)`;
+    chgEl.className='price-chg '+(up?'up':'down');
+  }
+  if(data.market_status){
+    const badge=document.getElementById('resMarketStatus');
+    badge.textContent=marketBadgeLabel(data.market_status);
+    badge.className=`market-badge ${marketBadgeClass(data.market_status)}`;
+    badge.style.display='';
+  }
+  if(data.high||data.low||data.volume){
+    document.getElementById('resHigh').textContent=data.high?`$${parseFloat(data.high).toFixed(2)}`:'—';
+    document.getElementById('resLow').textContent=data.low?`$${parseFloat(data.low).toFixed(2)}`:'—';
+    document.getElementById('resVolume').textContent=fmtVolume(data.volume);
+    document.getElementById('resOhlcvRow').style.display='flex';
+  }
+}
+
 function renderScreener(d){
   document.getElementById('resTicker').textContent=d.ticker;
-  document.getElementById('resPrice').textContent=`$${parseFloat(d.price).toFixed(2)}`;
-  const chg=d.price_change;
-  const chgEl=document.getElementById('resPriceChg');
-  chgEl.textContent=`${chg>=0?'+':''}${chg}%`;
-  chgEl.className='price-chg '+(chg>=0?'up':'down');
+  applyPriceData(d);
+  _lastPrice=d.price;
   document.getElementById('resName').textContent=d.company;
   document.getElementById('resSector').textContent=d.sector;
 
@@ -1194,6 +1312,7 @@ function renderScreener(d){
   document.getElementById('resTarget').textContent=d.target;
   document.getElementById('resTargetNote').textContent=d.target_note;
   document.getElementById('resultCard').classList.add('show');
+  startPriceRefresh(d.ticker);
 }
 
 function renderFinancials(d){
