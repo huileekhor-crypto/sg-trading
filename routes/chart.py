@@ -2,6 +2,7 @@ from flask import Blueprint, request, jsonify
 import yfinance as yf
 from config import Config
 from datetime import datetime, timedelta
+from utils.dc_patterns import dc_pattern_score, calc_mcdx_series, detect_historical_signals
 
 chart_bp = Blueprint('chart', __name__)
 _chart_cache    = {}   # (ticker, tf) → data,  1 h TTL
@@ -407,7 +408,7 @@ def get_chart_data(ticker):
         ml,sl,ht = _macd_s(c)
 
         # Full-history signals (pre-breakout)
-        fc  = raw['c']; fh=raw['h']; fl=raw['l']; fv=raw['v']
+        fc  = raw['c']; fh=raw['h']; fl=raw['l']; fo=raw['o']; fv=raw['v']
         fbbu,_,fbbl = _bb_s(fc)
         fbm         = [(u+lo)/2 if u and lo else None for u,lo in zip(fbbu,fbbl)]
         is_sq,sq_p  = _squeeze(fbbu,fbbl)
@@ -422,11 +423,27 @@ def get_chart_data(ticker):
         macd_turn   = cmacd and cmacd>0 and cmacd_prev and cmacd_prev<cmacd
         sig_count   = sum([is_sq,is_ac,bool(nr),bool(rsi_bld),bool(macd_turn)])
 
-        # NEW: professional analysis
+        # Professional analysis
         key_levels   = detect_key_levels(c,h,l)
         trend        = analyze_trend(c)
         pattern      = detect_pattern(c,h,l,v)
         vol_prof     = volume_profile(c,h,l,v)
+
+        # Danny Cheng pattern score + MCDX series
+        try:
+            dc       = dc_pattern_score(fc, fo, fh, fl, fv)
+            mcdx_all = dc['mcdx_series']
+            # Trim MCDX to match visible window
+            mcdx_vis = mcdx_all[-n:] if len(mcdx_all) >= n else mcdx_all
+        except Exception:
+            dc       = None
+            mcdx_vis = [None] * n
+
+        # Historical signal markers on visible window
+        try:
+            hist_signals = detect_historical_signals(fc, fo, fh, fl, fv, n_visible=n)
+        except Exception:
+            hist_signals = []
 
         # Pre-breakout explanations (kept for backward compat)
         explanations = []
@@ -445,11 +462,21 @@ def get_chart_data(ticker):
                         "low":[round(x,2) for x in l],"close":[round(x,2) for x in c]},
             "volume": [int(x) for x in v],
             "indicators": {"ema20":ema20,"ema50":ema50,"bb_upper":bbu,"bb_mid":bbm,"bb_lower":bbl,
-                           "rsi":rsi,"macd_line":ml,"signal_line":sl,"histogram":ht},
+                           "rsi":rsi,"macd_line":ml,"signal_line":sl,"histogram":ht,
+                           "mcdx": mcdx_vis},
             "key_levels":  key_levels,
             "trend":       trend,
             "pattern":     pattern,
             "volume_profile": vol_prof,
+            "dc_patterns": {
+                "score":       dc['score']       if dc else 0,
+                "label":       dc['label']       if dc else 'NO DATA',
+                "color":       dc['color']       if dc else 'neutral',
+                "signals":     dc['signals']     if dc else [],
+                "mcdx_signal": dc['mcdx_signal'] if dc else 'NEUTRAL',
+                "mcdx_value":  dc['mcdx_value']  if dc else 0,
+            } if dc else None,
+            "historical_signals": hist_signals,
             "prebreakout": {"score":sig_count*20,"is_squeeze":is_sq,"squeeze_pct":sq_p,
                             "is_accumulating":is_ac,"accum_score":ac_s,
                             "near_resistance":bool(nr),"resistance":resist,

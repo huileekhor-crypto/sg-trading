@@ -2,6 +2,7 @@ from flask import Blueprint, request, jsonify
 import yfinance as yf
 from config import Config
 from datetime import datetime, timedelta
+from utils.dc_patterns import dc_pattern_score
 
 breakout_bp = Blueprint('breakout', __name__)
 _breakout_cache = {}
@@ -66,6 +67,7 @@ def _get_candles(ticker, days=260):
         'c': df['Close'].tolist(),
         'h': df['High'].tolist(),
         'l': df['Low'].tolist(),
+        'o': df['Open'].tolist(),
         'v': df['Volume'].tolist(),
     }
     _candle_cache[ticker] = {'data': data, 'ts': now}
@@ -160,6 +162,7 @@ def _score_ticker(ticker, is_bull=True):
     closes  = candles['c']
     highs   = candles['h']
     lows    = candles['l']
+    opens   = candles.get('o', [])
     volumes = candles['v']
     price   = closes[-1]
     prev    = closes[-2] if len(closes) > 1 else price
@@ -306,11 +309,22 @@ def _score_ticker(ticker, is_bull=True):
         sigs.append({'name':'🏛 Trump Portfolio','score':10,'max':10,'pass':True,
                      'explanation':'Trump Q1 2026 OGE 278-T — active buy position disclosed'})
 
+    # ── Danny Cheng Pattern Score ──────────────────────────────────────────
+    try:
+        dc = dc_pattern_score(closes, opens, highs, lows, volumes)
+        pattern_score = dc['score']
+    except Exception:
+        dc = None
+        pattern_score = 0
+
     # ── Normalise + Regime Multiplier ─────────────────────────────────────
     raw_total  = sum(sg['score'] for sg in sigs)
     max_raw    = MAX_RAW + (10 if ticker in TRUMP_BUYS else 0)
     regime_m   = 1.0 if is_bull else 0.65
-    normalized = min(100, round((raw_total / max_raw) * 100 * regime_m))
+    tech_norm  = min(100, round((raw_total / max_raw) * 100 * regime_m))
+
+    # Blend: technical 75% + pattern 25%
+    normalized = min(100, round(tech_norm * 0.75 + pattern_score * 0.25))
 
     if normalized < 50:
         return None
@@ -335,6 +349,8 @@ def _score_ticker(ticker, is_bull=True):
     return {
         'ticker':         ticker,
         'score':          normalized,
+        'tech_score':     tech_norm,
+        'pattern_score':  pattern_score,
         'raw_score':      raw_total,
         'alert_level':    level,
         'alert_label':    label,
@@ -351,6 +367,14 @@ def _score_ticker(ticker, is_bull=True):
         'score_breakdown': {                                            # compat
             'volume': sigs[0]['score'], 'price': sigs[1]['score'],
             'rsi':    sigs[2]['score'], 'structure': sigs[3]['score'],
+        },
+        'dc_patterns':    {
+            'score':   dc['score']   if dc else 0,
+            'label':   dc['label']   if dc else '',
+            'color':   dc['color']   if dc else 'neutral',
+            'signals': dc['signals'] if dc else [],
+            'mcdx_signal': dc['mcdx_signal'] if dc else 'NEUTRAL',
+            'mcdx_value':  dc['mcdx_value']  if dc else 0,
         },
         'entry': f'${entry}', 'stop': f'${stop}', 'target': f'${target}',
         'rr': rr, 'rsi': rsi, 'why': why,
