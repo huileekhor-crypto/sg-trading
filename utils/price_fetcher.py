@@ -1,3 +1,4 @@
+import time
 import requests
 from datetime import datetime, timezone, timedelta
 
@@ -31,48 +32,62 @@ def _ext_block(meta, prefix):
     }
 
 
-def _yf_extended_hours(ticker, prev_close, sgt_time_str):
-    """Fallback: get pre/post market prices via yfinance when Yahoo v8 meta omits them."""
+def _candle_post_market(result, regular_ts, prev_close):
+    """Extract the last after-hours close from candle data (after regular session end)."""
     try:
-        import yfinance as yf
-        fi = yf.Ticker(ticker).fast_info
-
-        def _build_block(raw_price):
-            p = round(float(raw_price), 2)
-            if p <= 0:
-                return None
-            chg = round(p - prev_close, 2)
-            pct = round((chg / prev_close) * 100, 2) if prev_close else 0
-            return {'price': p, 'change': chg, 'change_pct': pct,
-                    'time': sgt_time_str, 'available': True}
-
-        post_market = None
-        pre_market  = None
-
-        try:
-            post_market = _build_block(fi.post_market_price)
-        except (AttributeError, TypeError, ValueError):
-            pass
-
-        try:
-            pre_market = _build_block(fi.pre_market_price)
-        except (AttributeError, TypeError, ValueError):
-            pass
-
-        return pre_market, post_market
+        timestamps = result.get('timestamp', [])
+        closes     = result['indicators']['quote'][0].get('close', [])
+        last_ts = last_c = None
+        for ts, c in zip(timestamps, closes):
+            if c and c > 0 and ts > regular_ts:
+                last_ts, last_c = ts, c
+        if not last_c:
+            return None
+        price  = round(float(last_c), 2)
+        change = round(price - prev_close, 2)
+        pct    = round((change / prev_close) * 100, 2) if prev_close else 0
+        return {'price': price, 'change': change, 'change_pct': pct,
+                'time': _ts_sgt(last_ts), 'available': True}
     except Exception:
-        return None, None
+        return None
+
+
+def _candle_pre_market(result, regular_open_ts, prev_close):
+    """Extract the last pre-market close — only candles in the 6h window before open."""
+    try:
+        timestamps = result.get('timestamp', [])
+        closes     = result['indicators']['quote'][0].get('close', [])
+        # Pre-market is 4:00 AM – 9:30 AM ET = 6 hours before regular open at most
+        pre_start  = regular_open_ts - 21600
+        last_ts = last_c = None
+        for ts, c in zip(timestamps, closes):
+            if c and c > 0 and pre_start <= ts < regular_open_ts:
+                last_ts, last_c = ts, c
+        if not last_c:
+            return None
+        price  = round(float(last_c), 2)
+        change = round(price - prev_close, 2)
+        pct    = round((change / prev_close) * 100, 2) if prev_close else 0
+        return {'price': price, 'change': change, 'change_pct': pct,
+                'time': _ts_sgt(last_ts), 'available': True}
+    except Exception:
+        return None
 
 
 def get_live_price(ticker):
     try:
-        # prePost=true returns extended-hours fields in meta
+        # Use period1/period2 (24-hour window) so after-hours candles are included.
+        # range=1d drops AH candles from Yahoo's response.
+        now_ts   = int(time.time())
+        period1  = now_ts - 86400
         url = (f'https://query1.finance.yahoo.com/v8/finance/chart/{ticker}'
-               f'?prePost=true&interval=1m&range=1d')
-        headers = {'User-Agent': 'Mozilla/5.0', 'Accept': 'application/json'}
-        res  = requests.get(url, headers=headers, timeout=6)
-        data = res.json()
-        meta = data['chart']['result'][0]['meta']
+               f'?period1={period1}&period2={now_ts}&interval=5m&includePrePost=true')
+        headers = {'User-Agent': 'Mozilla/5.0', 'Accept': 'application/json',
+                   'Accept-Encoding': 'identity'}
+        res    = requests.get(url, headers=headers, timeout=8)
+        data   = res.json()
+        result = data['chart']['result'][0]
+        meta   = result['meta']
 
         price      = round(float(meta.get('regularMarketPrice', 0)), 2)
         prev_close = round(float(meta.get('previousClose', 0) or
@@ -80,16 +95,29 @@ def get_live_price(ticker):
         change     = round(price - prev_close, 2)
         change_pct = round((change / prev_close) * 100, 2) if prev_close else 0
 
-        now_sgt    = datetime.now(SGT)
-        sgt_str    = now_sgt.strftime('%I:%M %p SGT')
+        now_sgt = datetime.now(SGT)
 
+        # --- Extended hours from meta (preferred when present) ---
         pre_market  = _ext_block(meta, 'pre') or _ext_block(meta, 'prePre')
         post_market = _ext_block(meta, 'post')
 
-        # Yahoo v8 meta sometimes omits extended-hours fields overnight —
-        # fall back to yfinance library which is more reliable.
-        if pre_market is None and post_market is None:
-            pre_market, post_market = _yf_extended_hours(ticker, prev_close, sgt_str)
+        # --- Fallback: extract from candle data when meta omits them ---
+        # This happens overnight when Yahoo strips postMarketPrice from meta.
+        regular_ts = meta.get('regularMarketTime', 0)
+        trading    = meta.get('currentTradingPeriod', {})
+        reg_open   = trading.get('regular', {}).get('start', regular_ts)
+
+        if post_market is None:
+            post_market = _candle_post_market(result, regular_ts, prev_close)
+
+        if pre_market is None:
+            pm_candle = _candle_pre_market(result, reg_open, prev_close)
+            # Only use if the candle is actually from today's pre-market window
+            if pm_candle and pm_candle['price'] != price:
+                pre_market = pm_candle
+
+        # Determine market state — Yahoo omits marketState when market is overnight
+        market_state = meta.get('marketState') or 'CLOSED'
 
         return {
             'price':         price,
@@ -100,10 +128,10 @@ def get_live_price(ticker):
             'low':           round(float(meta.get('regularMarketDayLow', 0)), 2),
             'open':          round(float(meta.get('regularMarketOpen', 0)), 2),
             'prev_close':    prev_close,
-            'market_status': meta.get('marketState', 'CLOSED'),
+            'market_status': market_state,
             'pre_market':    pre_market,
             'post_market':   post_market,
-            'sgt_time':      sgt_str,
+            'sgt_time':      now_sgt.strftime('%I:%M %p SGT'),
             'source':        'yahoo',
         }
     except Exception:

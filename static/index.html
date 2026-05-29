@@ -1563,11 +1563,15 @@ function renderExtHours(data){
 
   const pm  = data.pre_market;
   const ah  = data.post_market;
-  const ms  = (data.market_status||'').toUpperCase();
+  const ms  = (data.market_status||'CLOSED').toUpperCase();
   const sess = getSgtSessionInfo();
 
-  // Determine which session to highlight based on market_status from data
-  const activeFromData = ms.includes('PRE') ? 'PRE'
+  // Determine which session to highlight.
+  // When Yahoo returns null/CLOSED overnight but AH candle data exists, treat as POST.
+  const _hasPm = pm?.available;
+  const _hasAh = ah?.available;
+  const activeFromData = (ms.includes('PRE') && _hasPm) ? 'PRE'
+                       : (_hasAh && !_hasPm && !(ms==='REGULAR'||ms==='OPEN')) ? 'POST'
                        : (ms==='POST'||ms.includes('POST')) ? 'POST'
                        : (ms==='REGULAR'||ms==='OPEN') ? 'REGULAR'
                        : sess.session;
@@ -1816,12 +1820,13 @@ function updatePriceAge(){
 }
 
 function applyPriceData(data){
-  const ms  = (data.market_status||'').toUpperCase();
+  const ms  = (data.market_status||'CLOSED').toUpperCase();
   const ah  = data.post_market;
   const pm  = data.pre_market;
-  // Show AH price during after-hours/closed; PM price during pre-market
-  const showAh = ah?.available && (ms==='POST'||ms==='CLOSED'||ms.includes('POST'));
-  const showPm = pm?.available && (ms.includes('PRE'));
+  const isRegularOpen = ms==='REGULAR'||ms==='OPEN';
+  // During pre-market hours, PM price is more current than AH; otherwise show AH
+  const showPm = !isRegularOpen && pm?.available && ms.includes('PRE');
+  const showAh = !isRegularOpen && ah?.available && !showPm;
 
   const priceEl = document.getElementById('resPrice');
   const chgEl   = document.getElementById('resPriceChg');
