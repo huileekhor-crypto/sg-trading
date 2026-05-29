@@ -890,13 +890,19 @@ body::after{content:'';position:fixed;inset:0;background:repeating-linear-gradie
 <!-- CHART PANEL -->
 <div class="panel" id="panel-chart">
   <div class="chart-input-row">
-    <input class="txt-input ticker" id="chartInput" placeholder="Enter ticker for chart analysis (CPSH, IONQ...)" onkeydown="if(event.key==='Enter')loadChart()">
+    <input class="txt-input ticker" id="chartInput" placeholder="Enter ticker for chart analysis (NVDA, IONQ...)" onkeydown="if(event.key==='Enter')loadChart()">
     <button class="btn btn-primary" onclick="loadChart()">CHART</button>
+  </div>
+  <div style="display:flex;gap:6px;margin-bottom:14px;align-items:center">
+    <span style="font-family:'DM Mono',monospace;font-size:9px;color:var(--text-muted);letter-spacing:.12em">TIMEFRAME:</span>
+    <button class="chart-tf-btn active" id="tf1D" onclick="setTf('1D',this)">1D</button>
+    <button class="chart-tf-btn" id="tf1W" onclick="setTf('1W',this)">1W</button>
+    <button class="chart-tf-btn" id="tf1M" onclick="setTf('1M',this)">1M</button>
   </div>
   <div class="err" id="chartError"></div>
   <div class="chart-loading" id="chartLoading">
     <div class="loading-ticker" id="chartLoadingTicker">—</div>
-    <div class="loading-step active">Building chart + pre-breakout analysis...</div>
+    <div class="loading-step active">Building chart + professional analysis...</div>
   </div>
   <div id="chartResults"></div>
 </div>
@@ -2293,10 +2299,41 @@ canvas{display:block;}
 .legend{display:flex;gap:12px;flex-wrap:wrap;padding:8px 16px 12px;border-top:1px solid var(--border);}
 .legend-item{display:flex;align-items:center;gap:5px;font-family:'DM Mono',monospace;font-size:9px;color:var(--text-muted);letter-spacing:.06em;}
 .legend-dot{width:10px;height:3px;border-radius:2px;}
+
+/* Chart pro upgrades */
+.chart-tf-row{display:flex;align-items:center;gap:6px;padding:6px 16px;border-bottom:1px solid var(--border);background:var(--bg3);}
+.chart-tf-btn{padding:3px 10px;border-radius:4px;font-family:'DM Mono',monospace;font-size:10px;cursor:pointer;border:1px solid var(--border);background:transparent;color:var(--text-muted);transition:all .2s;}
+.chart-tf-btn.active{background:var(--bg5);border-color:var(--cyan);color:var(--cyan);}
+.chart-trend-badge{font-family:'DM Mono',monospace;font-size:9px;padding:2px 8px;border-radius:4px;margin-left:auto;}
+.chart-trend-badge.uptrend{background:rgba(0,230,118,.12);color:var(--green);border:1px solid rgba(0,230,118,.3);}
+.chart-trend-badge.downtrend{background:rgba(255,61,90,.12);color:var(--red);border:1px solid rgba(255,61,90,.3);}
+.chart-trend-badge.sideways{background:var(--bg4);color:var(--text-muted);border:1px solid var(--border);}
+.pattern-badge{background:rgba(187,134,252,.1);border:1px solid rgba(187,134,252,.35);border-radius:8px;padding:10px 14px;margin-bottom:12px;display:flex;align-items:flex-start;gap:10px;}
+.pattern-badge-icon{font-size:18px;flex-shrink:0;}
+.pattern-badge-title{font-family:'DM Mono',monospace;font-size:11px;font-weight:700;color:var(--purple);}
+.pattern-badge-detail{font-size:11px;color:var(--text-dim);margin-top:2px;line-height:1.5;}
+.ai-analysis-panel{background:var(--bg2);border:1px solid var(--border);border-radius:12px;margin-bottom:14px;overflow:hidden;}
+.ai-analysis-hdr{padding:12px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;}
+.ai-para{font-size:13px;color:var(--text-dim);line-height:1.8;margin-bottom:14px;}
+.ai-para:last-child{margin-bottom:0;}
+.ai-para-lbl{font-family:'DM Mono',monospace;font-size:9px;color:var(--text-muted);letter-spacing:.14em;text-transform:uppercase;margin-bottom:5px;}
+.sr-legend{display:flex;gap:12px;flex-wrap:wrap;padding:6px 16px 8px;font-family:'DM Mono',monospace;font-size:9px;color:var(--text-muted);}
+.sr-legend-res{color:rgba(255,80,80,.8);}
+.sr-legend-sup{color:rgba(0,210,90,.8);}
 </style>
 <script>
 // ===== CHART ENGINE =====
 let chartInstances = {};
+
+let _chartTf = '1D';
+
+function setTf(tf, btn){
+  _chartTf = tf;
+  document.querySelectorAll('.chart-tf-btn').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  const ticker = document.getElementById('chartInput').value.trim().toUpperCase();
+  if(ticker) loadChart();
+}
 
 async function loadChart() {
   const ticker = document.getElementById('chartInput').value.trim().toUpperCase();
@@ -2308,10 +2345,12 @@ async function loadChart() {
   document.getElementById('chartLoading').classList.add('show');
 
   try {
-    const res = await fetch(`/api/chart/${ticker}`);
+    const res = await fetch(`/api/chart/${ticker}?tf=${_chartTf}`);
     const data = await res.json();
     if (data.error) throw new Error(data.error);
     renderChart(data);
+    // Async AI analysis
+    fetchChartAnalysis(ticker);
   } catch(e) {
     const er = document.getElementById('chartError');
     er.textContent = '⚠ ' + friendlyError(e.message);
@@ -2321,75 +2360,113 @@ async function loadChart() {
   }
 }
 
+async function fetchChartAnalysis(ticker){
+  const el = document.getElementById('chartAiPanel');
+  if(!el) return;
+  el.innerHTML='<div style="padding:14px 16px;font-size:12px;color:var(--text-muted)">Generating AI analysis…</div>';
+  try{
+    const res = await fetch(`/api/chart/${ticker}/analysis`);
+    const data = await res.json();
+    if(data.error||!data.analysis){ el.innerHTML='<div style="padding:14px 16px;font-size:12px;color:var(--text-muted)">AI analysis unavailable</div>'; return; }
+    const paras = data.analysis.split(/\n\n+/).filter(p=>p.trim());
+    const labels = ['BIG PICTURE','CURRENT SETUP','WHAT TO WATCH'];
+    el.innerHTML='<div style="padding:14px 16px">'+
+      paras.map((p,i)=>`<div class="ai-para"><div class="ai-para-lbl">${labels[i]||''}</div>${p}</div>`).join('')+
+    '</div>';
+  }catch(e){ el.innerHTML=''; }
+}
+
 function renderChart(d) {
-  const pb = d.prebreakout;
-  const score = pb.score;
-  const scoreClass = score >= 60 ? 'high' : score >= 40 ? 'mid' : 'low';
-  const scoreLabel = score >= 60 ? 'STRONG SETUP' : score >= 40 ? 'DEVELOPING' : 'NOT YET';
+  const pb         = d.prebreakout;
+  const score      = pb.score;
+  const scoreClass = score>=60?'high':score>=40?'mid':'low';
+  const scoreLabel = score>=60?'STRONG SETUP':score>=40?'DEVELOPING':'NOT YET';
+  const trend      = d.trend || {};
+  const pattern    = d.pattern;
 
-  // Pre-breakout signals
-  const pillDefs = [
-    { key: 'is_squeeze',      label: '🔍 SQUEEZE',      color: 'cyan' },
-    { key: 'is_accumulating', label: '📦 ACCUMULATION',  color: 'green' },
-    { key: 'near_resistance', label: '🚪 AT RESISTANCE', color: 'amber' },
-    { key: 'rsi_building',    label: '⚡ RSI LAUNCH',    color: 'green' },
-    { key: 'macd_turning',    label: '📈 MACD TURNING',  color: 'green' },
+  const pillDefs=[
+    {key:'is_squeeze',label:'🔍 SQUEEZE',color:'cyan'},
+    {key:'is_accumulating',label:'📦 ACCUMULATION',color:'green'},
+    {key:'near_resistance',label:'🚪 AT RESISTANCE',color:'amber'},
+    {key:'rsi_building',label:'⚡ RSI LAUNCH',color:'green'},
+    {key:'macd_turning',label:'📈 MACD TURNING',color:'green'},
   ];
+  const pillsHTML = pillDefs.map(p=>`<div class="pb-pill ${pb[p.key]?'active '+p.color:'inactive'}">${p.label}</div>`).join('');
 
-  const pillsHTML = pillDefs.map(p => {
-    const on = pb[p.key];
-    return `<div class="pb-pill ${on ? 'active '+p.color : 'inactive'}">${p.label}</div>`;
-  }).join('');
-
-  const explanationsHTML = (d.explanations || []).map(e => `
+  const explHTML = (d.explanations||[]).map(e=>`
     <div class="explain-card">
       <div class="explain-signal ${e.color}">${e.signal}</div>
       <div class="explain-short">${e.short}</div>
       <div class="explain-text">${e.explain}</div>
-    </div>
-  `).join('');
+    </div>`).join('');
+
+  // Pattern badge
+  const patternHTML = pattern ? `
+    <div class="pattern-badge">
+      <div class="pattern-badge-icon">🎯</div>
+      <div>
+        <div class="pattern-badge-title">${pattern.pattern} — ${pattern.confidence}% confidence</div>
+        <div class="pattern-badge-detail">
+          Breakout above <strong style="color:var(--purple)">$${pattern.breakout_level}</strong>
+          · Target <strong style="color:var(--green)">$${pattern.target}</strong>
+          · Invalidation <strong style="color:var(--red)">$${pattern.invalidation_level}</strong>
+        </div>
+        <div style="font-size:11px;color:var(--text-muted);margin-top:3px">${pattern.description}</div>
+      </div>
+    </div>` : '';
+
+  // Trend badge
+  const trendBadge = trend.direction
+    ? `<span class="chart-trend-badge ${trend.direction}">${trend.direction.toUpperCase()} · ${trend.strength} · ${trend.slope_pct}%</span>` : '';
 
   const html = `
-    <!-- Pre-breakout score -->
-    <div class="pb-score-card score-${scoreClass}">
+    <!-- Pre-breakout + trend header -->
+    <div class="pb-score-card score-${scoreClass}" style="margin-bottom:10px">
       <div class="pb-header">
         <div>
-          <div class="pb-title">Pre-Breakout Detector — ${d.ticker}</div>
+          <div class="pb-title">Pre-Breakout Detector — ${d.ticker} <span style="text-transform:none;font-size:9px;color:var(--text-muted)">${d.timeframe||'1D'}</span></div>
           <div style="font-size:12px;color:var(--text-dim);margin-top:4px">
-            ${pb.signals_count} of 5 signals active · Current price $${parseFloat(d.current_price).toFixed(2)}
+            ${pb.signals_count} of 5 signals · $${parseFloat(d.current_price).toFixed(2)}
           </div>
         </div>
-        <div>
+        <div style="text-align:center">
           <div class="pb-score-circle ${scoreClass}">
             <div class="pb-score-num ${scoreClass}">${score}</div>
             <div class="pb-score-label">SCORE</div>
           </div>
-          <div style="font-family:'DM Mono',monospace;font-size:9px;color:var(--text-muted);text-align:center;margin-top:4px;letter-spacing:.08em">${scoreLabel}</div>
+          <div style="font-family:'DM Mono',monospace;font-size:9px;color:var(--text-muted);margin-top:4px">${scoreLabel}</div>
         </div>
       </div>
       <div class="pb-signals">${pillsHTML}</div>
-      ${pb.resistance ? `<div style="font-family:'DM Mono',monospace;font-size:10px;color:var(--amber);padding:6px 10px;background:rgba(255,179,0,.06);border:1px solid rgba(255,179,0,.2);border-radius:5px;display:inline-block">
-        🎯 Watch level: $${pb.resistance} — break above with volume = entry signal
-      </div>` : ''}
+      ${patternHTML}
     </div>
 
     <!-- Main price chart -->
     <div class="chart-wrap">
       <div class="chart-hdr">
-        <div class="chart-title">📊 Price Chart — ${d.ticker}</div>
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+          <div class="chart-title">📊 ${d.ticker}</div>
+          ${trendBadge}
+        </div>
         <div class="chart-price">$${parseFloat(d.current_price).toFixed(2)}</div>
       </div>
       <div class="chart-tabs">
-        <button class="chart-tab active" onclick="showChartPanel('price','${d.ticker}')">Price + BBands</button>
+        <button class="chart-tab active" onclick="showChartPanel('price','${d.ticker}')">Price + S/R</button>
         <button class="chart-tab" onclick="showChartPanel('volume','${d.ticker}')">Volume</button>
         <button class="chart-tab" onclick="showChartPanel('rsi','${d.ticker}')">RSI</button>
         <button class="chart-tab" onclick="showChartPanel('macd','${d.ticker}')">MACD</button>
       </div>
       <div class="chart-canvas-wrap">
-        <canvas id="chartPrice" height="220"></canvas>
+        <canvas id="chartPrice" height="240"></canvas>
         <canvas id="chartVolume" height="100" style="display:none"></canvas>
-        <canvas id="chartRsi" height="120" style="display:none"></canvas>
-        <canvas id="chartMacd" height="120" style="display:none"></canvas>
+        <canvas id="chartRsi"    height="120" style="display:none"></canvas>
+        <canvas id="chartMacd"   height="120" style="display:none"></canvas>
+      </div>
+      <div class="sr-legend" id="srLegend" style="display:none">
+        <span class="sr-legend-res">— Resistance</span>
+        <span class="sr-legend-sup">— Support</span>
+        <span style="color:rgba(0,230,118,.35)">▪ Entry zone</span>
+        <span style="color:rgba(255,61,90,.2)">▪ Stop zone</span>
       </div>
       <div class="legend" id="chartLegend"></div>
     </div>
@@ -2397,21 +2474,27 @@ function renderChart(d) {
     <!-- Explanations -->
     <div class="card" style="margin-bottom:14px">
       <div class="card-hdr"><div class="card-eyebrow">📖 Why These Signals Matter</div></div>
-      <div style="padding:14px 18px">${explanationsHTML}</div>
+      <div style="padding:14px 18px">${explHTML}</div>
+    </div>
+
+    <!-- AI Plain-English Analysis -->
+    <div class="ai-analysis-panel" style="margin-bottom:14px">
+      <div class="ai-analysis-hdr">
+        <div class="card-eyebrow">🧠 Plain-English Chart Reading</div>
+        <div style="font-family:'DM Mono',monospace;font-size:9px;color:var(--text-muted)">Claude AI · Updates on load</div>
+      </div>
+      <div id="chartAiPanel"><div style="padding:14px 16px;font-size:12px;color:var(--text-muted)">Loading AI analysis…</div></div>
     </div>
   `;
 
   document.getElementById('chartResults').innerHTML = html;
-
-  // Store data globally for chart switching
   window._chartData = d;
   window._activeChartTicker = d.ticker;
 
-  // Draw initial chart
-  setTimeout(() => {
+  setTimeout(()=>{
     drawPriceChart(d);
     setupChartTabs(d);
-  }, 100);
+  },100);
 }
 
 function showChartPanel(type, ticker) {
@@ -2472,7 +2555,9 @@ function drawPriceChart(d) {
   const ctx = getCanvasCtx('chartPrice');
   if (!ctx) return;
   const W = ctx.canvas.width, H = ctx.canvas.height;
-  const pad = { top: 20, right: 16, bottom: 40, left: 56 };
+  const hasVP = d.volume_profile && d.volume_profile.length > 0;
+  const vpW   = hasVP ? Math.round(W * 0.10) : 0;  // 10% for vol profile sidebar
+  const pad = { top: 20, right: 16 + vpW, bottom: 40, left: 56 };
   const cw = W - pad.left - pad.right, ch = H - pad.top - pad.bottom;
 
   ctx.clearRect(0, 0, W, H);
@@ -2549,16 +2634,56 @@ function drawPriceChart(d) {
   for (let i=0;i<n;i++) { if(!ind.ema50[i])continue; if(!started){ctx.moveTo(xPos(i),yPos(ind.ema50[i]));started=true;}else ctx.lineTo(xPos(i),yPos(ind.ema50[i])); }
   ctx.strokeStyle='#BB86FC'; ctx.lineWidth=1.5; ctx.stroke();
 
-  // Resistance line
-  const pb = d.prebreakout;
-  if (pb.resistance && pb.resistance >= minV && pb.resistance <= maxV) {
-    ctx.beginPath();
-    ctx.moveTo(pad.left, yPos(pb.resistance));
-    ctx.lineTo(pad.left+cw, yPos(pb.resistance));
-    ctx.strokeStyle='rgba(255,179,0,0.6)'; ctx.lineWidth=1; ctx.setLineDash([4,4]); ctx.stroke(); ctx.setLineDash([]);
-    ctx.fillStyle='rgba(255,179,0,0.8)'; ctx.font='9px DM Mono';
-    ctx.textAlign='left'; ctx.fillText('⬛ RESISTANCE $'+pb.resistance, pad.left+4, yPos(pb.resistance)-4);
+  // ── Entry zone (between nearest support and current price) ────────────────
+  const keyLevels = d.key_levels || [];
+  const supports  = keyLevels.filter(l=>l.type==='support'  && l.price>minV && l.price<closes[-1+n]);
+  const resistances=keyLevels.filter(l=>l.type==='resistance'&& l.price>closes[-1+n] && l.price<maxV);
+  const nearSup   = supports[0];
+  const nearRes   = resistances[0];
+  const cur2      = closes[n-1];
+
+  if(nearSup && nearSup.price < cur2) {
+    const y1=yPos(nearSup.price), y2=yPos(cur2);
+    ctx.fillStyle='rgba(0,230,118,0.05)';
+    ctx.fillRect(pad.left, Math.min(y1,y2), cw, Math.abs(y1-y2));
   }
+
+  // Stop zone (below nearest support or 3% below current)
+  const stopLevel = nearSup ? nearSup.price * 0.985 : cur2 * 0.97;
+  if(stopLevel >= minV) {
+    const y1=yPos(stopLevel), y2=yPos(minV);
+    ctx.fillStyle='rgba(255,61,90,0.04)';
+    ctx.fillRect(pad.left, Math.min(y1,H-pad.bottom), cw, Math.max(0,H-pad.bottom-Math.min(y1,H-pad.bottom)));
+  }
+
+  // ── Key S/R levels ─────────────────────────────────────────────────────────
+  keyLevels.forEach(lvl => {
+    if(lvl.price < minV || lvl.price > maxV) return;
+    const y = yPos(lvl.price);
+    const isRes = lvl.type==='resistance';
+    ctx.beginPath(); ctx.moveTo(pad.left,y); ctx.lineTo(pad.left+cw,y);
+    ctx.strokeStyle = isRes ? 'rgba(255,80,80,0.55)' : 'rgba(0,210,90,0.55)';
+    ctx.lineWidth   = lvl.strength==='strong' ? 1.5 : 1;
+    ctx.setLineDash(lvl.touches>=2 ? [] : [4,4]);
+    ctx.stroke(); ctx.setLineDash([]);
+    // Label
+    const lbl = `${isRes?'R':'S'} $${lvl.price}${lvl.touches>=2?' ('+lvl.touches+'×)':''}`;
+    ctx.fillStyle = isRes ? 'rgba(255,100,100,0.8)' : 'rgba(0,220,100,0.8)';
+    ctx.font='8px DM Mono'; ctx.textAlign='left';
+    ctx.fillText(lbl, pad.left+3, y - 3);
+  });
+
+  // ── Legacy resistance line (prebreakout compat) ────────────────────────────
+  const pb = d.prebreakout;
+  if (pb.resistance && pb.resistance >= minV && pb.resistance <= maxV
+      && !keyLevels.some(l=>Math.abs(l.price-pb.resistance)<pb.resistance*0.005)) {
+    ctx.beginPath(); ctx.moveTo(pad.left,yPos(pb.resistance)); ctx.lineTo(pad.left+cw,yPos(pb.resistance));
+    ctx.strokeStyle='rgba(255,179,0,0.5)'; ctx.lineWidth=1; ctx.setLineDash([4,4]); ctx.stroke(); ctx.setLineDash([]);
+  }
+
+  // Show S/R legend
+  const srLeg=document.getElementById('srLegend');
+  if(srLeg) srLeg.style.display=keyLevels.length?'flex':'none';
 
   // Candlesticks
   const barW = Math.max(2, (cw / n) * 0.6);
@@ -2586,12 +2711,37 @@ function drawPriceChart(d) {
     ctx.fillText(dates[i], xPos(i), H - 8);
   }
 
+  // ── Volume Profile sidebar ─────────────────────────────────────────────────
+  if(hasVP && vpW > 0) {
+    const vp = d.volume_profile;
+    const vpX = pad.left + cw + 4;
+    const allPrices = vp.map(b=>b.price);
+    const vpMin=Math.min(...allPrices), vpMax=Math.max(...allPrices);
+    const vpRange = vpMax - vpMin || 1;
+    const barMaxW = vpW - 6;
+
+    vp.forEach(bar => {
+      const by = pad.top + ch - ((bar.price - minV) / range) * ch;
+      const bh = Math.max(1, ch / vp.length);
+      const bw = Math.round((bar.pct / 100) * barMaxW);
+      const intensity = bar.pct / 100;
+      ctx.fillStyle = `rgba(0,229,255,${0.08 + intensity * 0.35})`;
+      ctx.fillRect(vpX, by - bh/2, bw, bh);
+    });
+
+    // VP axis label
+    ctx.fillStyle='rgba(100,120,160,0.6)'; ctx.font='7px DM Mono'; ctx.textAlign='left';
+    ctx.fillText('VOL', vpX, pad.top - 6);
+  }
+
   // Legend
   document.getElementById('chartLegend').innerHTML = `
     <div class="legend-item"><div class="legend-dot" style="background:#FFB300"></div>EMA20</div>
     <div class="legend-item"><div class="legend-dot" style="background:#BB86FC"></div>EMA50</div>
-    <div class="legend-item"><div class="legend-dot" style="background:rgba(0,229,255,0.5)"></div>Bollinger Bands</div>
-    <div class="legend-item"><div class="legend-dot" style="background:rgba(255,179,0,0.6)"></div>Resistance</div>
+    <div class="legend-item"><div class="legend-dot" style="background:rgba(0,229,255,0.5)"></div>BBands</div>
+    <div class="legend-item"><div class="legend-dot" style="background:rgba(255,80,80,0.55);height:1px"></div>Resistance</div>
+    <div class="legend-item"><div class="legend-dot" style="background:rgba(0,210,90,0.55);height:1px"></div>Support</div>
+    ${hasVP?'<div class="legend-item"><div class="legend-dot" style="background:rgba(0,229,255,0.3)"></div>Vol Profile</div>':''}
   `;
 }
 
