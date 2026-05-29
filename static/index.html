@@ -93,6 +93,31 @@ body::after{content:'';position:fixed;inset:0;background:repeating-linear-gradie
 @keyframes priceFlash{0%{color:inherit;}40%{color:#ff9800;}100%{color:inherit;}}
 .price-flash{animation:priceFlash 1s ease;}
 
+/* ===== SOCIAL SENTIMENT ===== */
+.sent-block{padding:14px 18px;border-top:1px solid var(--border);}
+.sent-row{display:flex;align-items:flex-start;gap:10px;margin-bottom:10px;}
+.sent-row:last-child{margin-bottom:0;}
+.sent-source{font-family:'DM Mono',monospace;font-size:9px;font-weight:700;letter-spacing:.1em;color:var(--text-muted);width:80px;flex-shrink:0;padding-top:2px;}
+.sent-body{flex:1;min-width:0;}
+.sent-emoji{font-size:18px;margin-right:4px;}
+.sent-label{font-family:'DM Mono',monospace;font-size:11px;font-weight:700;color:var(--text);}
+.sent-sub{font-family:'DM Mono',monospace;font-size:9px;color:var(--text-dim);margin-top:2px;}
+.sent-gauge-wrap{height:4px;background:var(--bg5);border-radius:2px;overflow:hidden;margin-top:5px;max-width:180px;}
+.sent-gauge-fill{height:100%;border-radius:2px;transition:width .5s ease;}
+.sent-badge{font-family:'DM Mono',monospace;font-size:9px;padding:2px 6px;border-radius:4px;margin-right:5px;display:inline-block;}
+.sent-badge.green{background:rgba(0,230,118,.12);color:var(--green);border:1px solid rgba(0,230,118,.25);}
+.sent-badge.red{background:rgba(255,61,90,.12);color:var(--red);border:1px solid rgba(255,61,90,.25);}
+.sent-badge.amber{background:rgba(255,179,0,.12);color:var(--amber);border:1px solid rgba(255,179,0,.25);}
+.sent-badge.neutral{background:var(--bg4);color:var(--text-muted);border:1px solid var(--border);}
+.sent-summary{font-size:11px;color:var(--text-dim);font-style:italic;margin-top:4px;line-height:1.5;}
+.sent-contrarian{background:rgba(255,61,90,.08);border:1px solid rgba(255,61,90,.3);border-radius:8px;padding:8px 12px;margin-top:8px;font-size:12px;color:var(--red);}
+/* Trending card */
+.trend-card{background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:14px 16px;margin-bottom:8px;}
+.trend-ticker{font-family:'DM Mono',monospace;font-size:14px;font-weight:700;color:var(--text);}
+.trend-title{font-size:11px;color:var(--text-muted);margin-top:1px;}
+.trend-gauge-wrap{height:5px;background:var(--bg5);border-radius:3px;overflow:hidden;margin-top:6px;}
+.trend-gauge-fill{height:100%;border-radius:3px;}
+
 /* ===== EARNINGS CALENDAR ===== */
 .cal-section{margin-bottom:24px;}
 .cal-section-title{font-family:'DM Mono',monospace;font-size:9px;color:var(--text-muted);letter-spacing:.14em;text-transform:uppercase;margin-bottom:12px;}
@@ -615,6 +640,12 @@ body::after{content:'';position:fixed;inset:0;background:repeating-linear-gradie
     <div class="analysis-block"><div class="analysis-label">AI Trade Thesis</div><div class="analysis-text" id="resThesis">—</div></div>
     <div class="analysis-block"><div class="analysis-label">Risk Factors</div><div class="analysis-text" id="resRisks">—</div></div>
 
+    <!-- Social Sentiment -->
+    <div class="sent-block" id="resSentiment" style="display:none">
+      <div class="analysis-label" style="margin-bottom:10px">Social Sentiment</div>
+      <div id="resSentimentBody"></div>
+    </div>
+
     <div class="levels-row">
       <div class="level-item"><div class="level-label entry">Entry Zone</div><div class="level-price" id="resEntry">—</div><div class="level-note" id="resEntryNote">—</div></div>
       <div class="level-item"><div class="level-label stop">Stop Loss</div><div class="level-price" id="resStop">—</div><div class="level-note" id="resStopNote">—</div></div>
@@ -866,6 +897,18 @@ body::after{content:'';position:fixed;inset:0;background:repeating-linear-gradie
 
 <!-- ===== ALERTS ===== -->
 <div class="panel" id="panel-alerts">
+
+  <!-- Trending Now -->
+  <div style="margin-bottom:16px">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+      <div style="font-family:'DM Mono',monospace;font-size:9px;color:var(--text-muted);letter-spacing:.14em">🔥 TRENDING NOW ON STOCKTWITS</div>
+      <button class="btn btn-ghost" onclick="loadTrending(true)" style="padding:4px 10px;font-size:10px">↻ Refresh</button>
+    </div>
+    <div id="trendingBody">
+      <div style="font-family:'DM Mono',monospace;font-size:11px;color:var(--text-muted);padding:10px 0">Loading trending stocks...</div>
+    </div>
+  </div>
+
   <!-- Add alert form -->
   <div class="card" style="margin-bottom:14px">
     <div class="card-hdr">
@@ -1046,7 +1089,7 @@ function switchTab(tab){
   document.getElementById('panel-'+tab).classList.add('active');
   if(tab==='scenarios'&&!document.getElementById('scenariosContainer').innerHTML)loadScenarios();
   if(tab==='journal')loadJournal();
-  if(tab==='alerts'){loadAlerts();ackAlerts();loadRecipients();}
+  if(tab==='alerts'){loadAlerts();ackAlerts();loadRecipients();loadTrending();}
   if(tab==='earnings')loadEarningsCalendar();
 }
 
@@ -1225,6 +1268,7 @@ async function runScreener(){
   document.getElementById('resOhlcvRow').style.display='none';
   document.getElementById('resMarketStatus').style.display='none';
   const upd=document.getElementById('resPriceUpdated');if(upd)upd.style.display='none';
+  const sentEl=document.getElementById('resSentiment');if(sentEl)sentEl.style.display='none';
   const loadEl=document.getElementById('screenerLoading');
   loadEl.classList.add('show');
   document.getElementById('loadingTicker').textContent=ticker;
@@ -1405,6 +1449,7 @@ function renderScreener(d){
   document.getElementById('resTargetNote').textContent=d.target_note;
   document.getElementById('resultCard').classList.add('show');
   startPriceRefresh(d.ticker);
+  loadSentiment(d.ticker);
 }
 
 function renderFinancials(d){
@@ -2864,6 +2909,147 @@ function renderEarningsWarning(events){
 
 // Silently load earnings warnings 3s after page load
 setTimeout(()=>loadEarningsCalendar(true), 3000);
+
+// ===== SOCIAL SENTIMENT =====
+function _sentColor(ratio){
+  if(ratio>=75)return'var(--green)';
+  if(ratio>=55)return'var(--amber)';
+  if(ratio>=40)return'rgba(255,255,255,.3)';
+  return'var(--red)';
+}
+function _sentBadgeClass(ratio){
+  if(ratio>=60)return'green';
+  if(ratio>=45)return'neutral';
+  return'red';
+}
+function _aiScoreBadge(score){
+  if(!score&&score!==0)return'';
+  if(score>=70)return'green';
+  if(score>=45)return'neutral';
+  return'red';
+}
+
+async function loadSentiment(ticker){
+  const block = document.getElementById('resSentiment');
+  const body  = document.getElementById('resSentimentBody');
+  if(!block||!body)return;
+  block.style.display='';
+  body.innerHTML='<div style="font-family:\'DM Mono\',monospace;font-size:10px;color:var(--text-muted)">Loading social sentiment…</div>';
+  try{
+    const res  = await fetch(`/api/sentiment/${ticker}`);
+    const data = await res.json();
+    if(data.error){body.innerHTML='<div style="font-size:11px;color:var(--text-muted)">Sentiment unavailable</div>';return;}
+    renderSentiment(data, body);
+  }catch(e){
+    body.innerHTML='<div style="font-size:11px;color:var(--text-muted)">Sentiment unavailable</div>';
+  }
+}
+
+function renderSentiment(data, el){
+  const st = data.stocktwits;
+  const ai = data.ai;
+
+  // ── StockTwits row ──
+  let stHtml = '<div style="font-size:11px;color:var(--text-muted)">StockTwits data unavailable</div>';
+  if(st){
+    const gaugeColor = _sentColor(st.sentiment_ratio);
+    const trendBadge = st.trending
+      ? '<span class="sent-badge amber">🔥 TRENDING</span>' : '';
+    const volBadge = st.vol_spike>=1.5
+      ? `<span class="sent-badge amber">${st.vol_spike}× vol spike</span>` : '';
+    stHtml=`
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <span class="sent-emoji">${st.emoji}</span>
+        <span class="sent-label">${st.label}</span>
+        <span class="sent-badge ${_sentBadgeClass(st.sentiment_ratio)}">${st.sentiment_ratio}% Bullish</span>
+        ${trendBadge}${volBadge}
+      </div>
+      <div class="sent-sub">${st.bullish_count} bull · ${st.bearish_count} bear · ${st.recent_1h} msg/hr</div>
+      <div class="sent-gauge-wrap"><div class="sent-gauge-fill" style="width:${st.sentiment_ratio}%;background:${gaugeColor}"></div></div>`;
+  }
+
+  // ── AI / Claude row ──
+  let aiHtml = '';
+  if(ai){
+    const score = ai.sentiment_score||50;
+    const trendArrow = ai.trend==='rising'?'↑ Rising':ai.trend==='falling'?'↓ Falling':'→ Neutral';
+    const trendColor = ai.trend==='rising'?'var(--green)':ai.trend==='falling'?'var(--red)':'var(--text-dim)';
+    const influencer = ai.influencer_buzz?'<span class="sent-badge green">Influencer buzz ✓</span>':'';
+    const options    = ai.options_chatter?'<span class="sent-badge amber">Options chatter ✓</span>':'';
+    const fearCap    = ai.fear_capitulation
+      ?'<span class="sent-badge red">😱 Fear capitulation</span>':'';
+    aiHtml=`
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:4px">
+        <span class="sent-badge ${_aiScoreBadge(score)}">AI Score ${score}/100</span>
+        <span style="font-family:'DM Mono',monospace;font-size:10px;color:${trendColor}">${trendArrow}</span>
+        ${influencer}${options}${fearCap}
+      </div>
+      ${ai.summary?`<div class="sent-summary">"${ai.summary}"</div>`:''}`;
+  }
+
+  // ── Contrarian flag ──
+  const contrarian = data.contrarian
+    ? '<div class="sent-contrarian">⚡ CONTRARIAN BUY SIGNAL — fear capitulation detected with bullish technicals</div>' : '';
+
+  // ── Breakout bonus ──
+  const bonus = data.breakout_bonus>0
+    ? `<div style="font-family:'DM Mono',monospace;font-size:9px;color:var(--amber);margin-top:8px">+${data.breakout_bonus} pts sentiment bonus applied to breakout score</div>` : '';
+
+  el.innerHTML=`
+    <div class="sent-row">
+      <div class="sent-source">STOCKTWITS</div>
+      <div class="sent-body">${stHtml}</div>
+    </div>
+    ${ai?`<div class="sent-row">
+      <div class="sent-source">AI SEARCH</div>
+      <div class="sent-body">${aiHtml}</div>
+    </div>`:''}
+    ${contrarian}${bonus}
+    <div style="font-family:'DM Mono',monospace;font-size:9px;color:var(--text-muted);margin-top:8px">
+      Cached 15 min · ${new Date(data.timestamp).toLocaleTimeString('en-SG',{hour:'2-digit',minute:'2-digit'})}
+    </div>`;
+}
+
+// ── Trending ──
+let _trendingLoaded = false;
+async function loadTrending(force=false){
+  const el = document.getElementById('trendingBody');
+  if(!el)return;
+  if(_trendingLoaded&&!force)return;
+  el.innerHTML='<div style="font-family:\'DM Mono\',monospace;font-size:10px;color:var(--text-muted)">Fetching trending…</div>';
+  try{
+    const res  = await fetch('/api/sentiment/trending');
+    const data = await res.json();
+    if(data.error||!data.trending?.length){
+      el.innerHTML='<div style="font-size:11px;color:var(--text-muted)">Trending data unavailable</div>';
+      return;
+    }
+    _trendingLoaded=true;
+    el.innerHTML=data.trending.map(item=>{
+      const st = item.sentiment||{};
+      const ratio = st.sentiment_ratio||50;
+      const gaugeColor = ratio>=70?'var(--green)':ratio>=50?'var(--amber)':'var(--red)';
+      const wl = item.watchlist_count>0?`<span style="font-family:'DM Mono',monospace;font-size:9px;color:var(--text-muted)">${(item.watchlist_count/1000).toFixed(0)}K watching</span>`:'';
+      return`<div class="trend-card" style="cursor:pointer" onclick="document.getElementById('tickerInput').value='${item.ticker}';switchTab('screener');runScreener()">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
+          <div>
+            <span class="trend-ticker">${item.ticker}</span>
+            <span style="margin-left:8px;font-size:14px">${st.emoji||'😐'}</span>
+            <span style="font-family:'DM Mono',monospace;font-size:10px;color:var(--text-dim);margin-left:4px">${st.label||''}</span>
+          </div>
+          <div style="text-align:right">
+            <span class="sent-badge ${_sentBadgeClass(ratio)}">${ratio}%</span>
+            ${st.trending?'<span class="sent-badge amber" style="margin-left:4px">🔥</span>':''}
+          </div>
+        </div>
+        <div class="trend-title">${item.title||''}${wl?'&nbsp;·&nbsp;'+wl:''}</div>
+        <div class="trend-gauge-wrap"><div class="trend-gauge-fill" style="width:${ratio}%;background:${gaugeColor}"></div></div>
+      </div>`;
+    }).join('');
+  }catch(e){
+    el.innerHTML='<div style="font-size:11px;color:var(--text-muted)">Trending unavailable</div>';
+  }
+}
 
 // ===== BREAKOUT SCANNER =====
 let _brkTimer = null;
