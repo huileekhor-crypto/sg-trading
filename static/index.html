@@ -2327,6 +2327,8 @@ function startTickerBarPolling() {
 // Init watchlist
 renderWatchlistChips();
 startWatchlistPolling();
+// If watchlist is empty there are no fetches to update status — show ready state
+if (!watchlist.length) _setConnStatus('yahoo');
 </script>
 
 <script>
