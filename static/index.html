@@ -3911,7 +3911,8 @@ function renderTrumpTracker(alertData, portData, mentionData, el, pel){
   const sells    = portData.sells   || [];
   const mentions = mentionData.mentions  || [];
   const tone     = mentionData.tone_today || '';
-  const lastUpd  = mentionData.last_updated || '';
+  const mentionSrc = mentionData.source || '';
+  const lastUpd  = (mentionData.last_updated && mentionData.last_updated !== 'unavailable') ? mentionData.last_updated : '';
   const portSrc  = portData.source === 'live' ? 'Live — trumpstocktracker.com' : 'OGE Form 278-T (fallback)';
   const DISCLAIMER = portData.disclaimer || '';
 
@@ -3933,7 +3934,7 @@ function renderTrumpTracker(alertData, portData, mentionData, el, pel){
         <button class="btn btn-ghost" style="font-size:9px;padding:4px 8px" onclick="addTicker('${m.ticker}');showToast('${m.ticker} added')">+ WL</button>
       </div>
     </div>`;
-  }).join('') : '<div style="font-family:\'DM Mono\',monospace;font-size:10px;color:var(--text-muted)">No stock mentions detected today — check back later.</div>';
+  }).join('') : `<div style="font-family:'DM Mono',monospace;font-size:10px;color:var(--text-muted)">${tone||'No public stock mentions found in the past 48 hours.'}</div>`;
 
   // ── High-conviction alerts (portfolio + mention) ───────────────────────
   const alertHTML = alerts.length ? alerts.slice(0,5).map((r,i)=>{

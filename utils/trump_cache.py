@@ -61,9 +61,9 @@ def fetch_portfolio_live():
         return None
     today = datetime.now().strftime('%B %d, %Y')
     prompt = (
-        f"Today is {today}. Search trumpstocktracker.com for Trump's most recent "
-        "stock holdings and trades disclosed in his OGE financial filings. "
-        "Return ONLY valid JSON (no markdown, no prose):\n"
+        f"Today is {today}. Search trumpstocktracker.com and related financial news "
+        "for Trump's most recent stock holdings and trades disclosed in his OGE "
+        "financial filings. Return ONLY valid JSON (no markdown, no prose):\n"
         '{"holdings":[{"ticker":"NVDA","company":"Nvidia","action":"buy",'
         '"value_range":"$1M-$5M","date":"Q1 2026","count":3}],'
         '"last_updated":"Q1 2026","total_transactions":3848}'
@@ -122,28 +122,33 @@ def get_portfolio_tickers():
 # ── Mentions ──────────────────────────────────────────────────────────────────
 
 def fetch_mentions_live():
-    """Claude web_search → trumptrack.app → today's stock mentions JSON."""
+    """Claude web_search → search news for Trump stock mentions today."""
     if not Config.ANTHROPIC_API_KEY:
         return None
     today = datetime.now().strftime('%B %d, %Y')
     prompt = (
-        f"Today is {today}. Search trumptrack.app for Trump's most recent public "
-        "mentions of stock tickers or companies in the past 24-48 hours. "
-        "Include Truth Social posts, White House statements, and news appearances. "
-        "Return ONLY valid JSON (no markdown, no prose):\n"
-        '{"mentions":[{"ticker":"DELL","company":"Dell Technologies",'
-        '"context":"what he said or did about this company",'
-        '"source":"Truth Social|White House|News","date":"today",'
-        '"sentiment":"positive|negative|neutral"}],'
-        '"tone_today":"brief summary of his market tone today"}'
+        f"Today is {today}. Search the web for any US stocks or companies that "
+        "Donald Trump has publicly mentioned, praised, criticised, or taken action on "
+        "in the past 48 hours. Check Truth Social, White House statements, "
+        "press conferences, tweets, and financial news sites. "
+        "Also check trumptrack.app and trumpstocktracker.com if available. "
+        "Return ONLY valid JSON — no markdown, no prose, just the JSON object:\n"
+        '{"mentions":[{"ticker":"NVDA","company":"Nvidia",'
+        '"context":"exact quote or description of what he said",'
+        '"source":"Truth Social","date":"May 29 2026",'
+        '"sentiment":"positive"}],'
+        '"tone_today":"one sentence summary of his overall market tone today"}'
+        "\nIf no mentions found in the past 48 hours, return: "
+        '{"mentions":[],"tone_today":"No public stock mentions in the past 48 hours"}'
     )
     try:
         msg = _ac().messages.create(
-            model='claude-haiku-4-5-20251001', max_tokens=1000,
-            tools=[{"type": "web_search_20250305", "name": "web_search", "max_uses": 3}],
+            model='claude-haiku-4-5-20251001', max_tokens=1200,
+            tools=[{"type": "web_search_20250305", "name": "web_search", "max_uses": 4}],
             messages=[{"role": "user", "content": prompt}]
         )
-        text   = ''.join(b.text for b in msg.content if hasattr(b, 'text')).strip()
+        text = ''.join(b.text for b in msg.content if hasattr(b, 'text')).strip()
+        # Try extracting JSON from the response
         result = _extract_json(text, 'object')
         if result and isinstance(result.get('mentions'), list):
             return result
@@ -172,8 +177,8 @@ def get_mentions():
         })
         return live
 
-    empty = {'mentions': [], 'tone_today': 'No mentions data available',
-             'last_updated': 'unavailable', 'source': 'unavailable'}
+    empty = {'mentions': [], 'tone_today': 'No public stock mentions found in past 48h',
+             'last_updated': now.strftime('%I:%M %p SGT'), 'source': 'no_data'}
     _mentions_cache.update({'data': empty, 'ts': now, 'tickers_today': set()})
     return empty
 
