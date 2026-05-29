@@ -31,6 +31,39 @@ def _ext_block(meta, prefix):
     }
 
 
+def _yf_extended_hours(ticker, prev_close, sgt_time_str):
+    """Fallback: get pre/post market prices via yfinance when Yahoo v8 meta omits them."""
+    try:
+        import yfinance as yf
+        fi = yf.Ticker(ticker).fast_info
+
+        def _build_block(raw_price):
+            p = round(float(raw_price), 2)
+            if p <= 0:
+                return None
+            chg = round(p - prev_close, 2)
+            pct = round((chg / prev_close) * 100, 2) if prev_close else 0
+            return {'price': p, 'change': chg, 'change_pct': pct,
+                    'time': sgt_time_str, 'available': True}
+
+        post_market = None
+        pre_market  = None
+
+        try:
+            post_market = _build_block(fi.post_market_price)
+        except (AttributeError, TypeError, ValueError):
+            pass
+
+        try:
+            pre_market = _build_block(fi.pre_market_price)
+        except (AttributeError, TypeError, ValueError):
+            pass
+
+        return pre_market, post_market
+    except Exception:
+        return None, None
+
+
 def get_live_price(ticker):
     try:
         # prePost=true returns extended-hours fields in meta
@@ -47,10 +80,18 @@ def get_live_price(ticker):
         change     = round(price - prev_close, 2)
         change_pct = round((change / prev_close) * 100, 2) if prev_close else 0
 
-        now_sgt = datetime.now(SGT)
+        now_sgt    = datetime.now(SGT)
+        sgt_str    = now_sgt.strftime('%I:%M %p SGT')
+
+        pre_market  = _ext_block(meta, 'pre') or _ext_block(meta, 'prePre')
+        post_market = _ext_block(meta, 'post')
+
+        # Yahoo v8 meta sometimes omits extended-hours fields overnight —
+        # fall back to yfinance library which is more reliable.
+        if pre_market is None and post_market is None:
+            pre_market, post_market = _yf_extended_hours(ticker, prev_close, sgt_str)
 
         return {
-            # Regular session
             'price':         price,
             'change':        change,
             'change_pct':    change_pct,
@@ -60,11 +101,9 @@ def get_live_price(ticker):
             'open':          round(float(meta.get('regularMarketOpen', 0)), 2),
             'prev_close':    prev_close,
             'market_status': meta.get('marketState', 'CLOSED'),
-            # Extended hours (try 'pre'/'prePre' and 'post')
-            'pre_market':    _ext_block(meta, 'pre') or _ext_block(meta, 'prePre'),
-            'post_market':   _ext_block(meta, 'post'),
-            # SGT context
-            'sgt_time':      now_sgt.strftime('%I:%M %p SGT'),
+            'pre_market':    pre_market,
+            'post_market':   post_market,
+            'sgt_time':      sgt_str,
             'source':        'yahoo',
         }
     except Exception:

@@ -1816,18 +1816,41 @@ function updatePriceAge(){
 }
 
 function applyPriceData(data){
-  if(data.price){
-    document.getElementById('resPrice').textContent=`$${parseFloat(data.price).toFixed(2)}`;
+  const ms  = (data.market_status||'').toUpperCase();
+  const ah  = data.post_market;
+  const pm  = data.pre_market;
+  // Show AH price during after-hours/closed; PM price during pre-market
+  const showAh = ah?.available && (ms==='POST'||ms==='CLOSED'||ms.includes('POST'));
+  const showPm = pm?.available && (ms.includes('PRE'));
+
+  const priceEl = document.getElementById('resPrice');
+  const chgEl   = document.getElementById('resPriceChg');
+
+  if(showAh && priceEl){
+    priceEl.textContent = `$${parseFloat(ah.price).toFixed(2)}`;
+    if(chgEl){
+      const up=ah.change_pct>=0;
+      chgEl.textContent=`${up?'▲':'▼'} ${up?'+':''}${parseFloat(ah.change).toFixed(2)} (${up?'+':''}${parseFloat(ah.change_pct).toFixed(2)}%) · AFTER-HOURS`;
+      chgEl.className='price-chg '+(up?'up':'down');
+    }
+  } else if(showPm && priceEl){
+    priceEl.textContent = `$${parseFloat(pm.price).toFixed(2)}`;
+    if(chgEl){
+      const up=pm.change_pct>=0;
+      chgEl.textContent=`${up?'▲':'▼'} ${up?'+':''}${parseFloat(pm.change).toFixed(2)} (${up?'+':''}${parseFloat(pm.change_pct).toFixed(2)}%) · PRE-MARKET`;
+      chgEl.className='price-chg '+(up?'up':'down');
+    }
+  } else {
+    if(data.price && priceEl) priceEl.textContent=`$${parseFloat(data.price).toFixed(2)}`;
+    const chgAbs=data.change;
+    const chgPct=data.change_pct??data.price_change;
+    if(chgAbs!==undefined&&chgPct!==undefined&&chgEl){
+      const up=chgAbs>=0;
+      chgEl.textContent=`${up?'▲':'▼'} ${up?'+':''}${parseFloat(chgAbs).toFixed(2)} (${up?'+':''}${parseFloat(chgPct).toFixed(2)}%)`;
+      chgEl.className='price-chg '+(up?'up':'down');
+    }
   }
-  const chgAbs=data.change;
-  const chgPct=data.change_pct??data.price_change;
-  if(chgAbs!==undefined&&chgPct!==undefined){
-    const chgEl=document.getElementById('resPriceChg');
-    const up=chgAbs>=0;
-    const arrow=up?'▲':'▼';
-    chgEl.textContent=`${arrow} ${up?'+':''}${parseFloat(chgAbs).toFixed(2)} (${up?'+':''}${parseFloat(chgPct).toFixed(2)}%)`;
-    chgEl.className='price-chg '+(up?'up':'down');
-  }
+
   if(data.market_status){
     const badge=document.getElementById('resMarketStatus');
     badge.textContent=marketBadgeLabel(data.market_status);
@@ -1840,8 +1863,8 @@ function applyPriceData(data){
     document.getElementById('resVolume').textContent=fmtVolume(data.volume);
     document.getElementById('resOhlcvRow').style.display='flex';
   }
-  // Extended hours block
-  if(data.pre_market||data.post_market) renderExtHours(data);
+  // Always render extended hours block (handles null case internally)
+  renderExtHours(data);
 }
 
 function renderScreener(d){
