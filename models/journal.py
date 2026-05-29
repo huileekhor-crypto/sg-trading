@@ -66,3 +66,11 @@ def delete_trade(user_id, trade_id):
                  (trade_id, user_id))
     conn.commit()
     conn.close()
+
+def update_trade(user_id, trade_id, exit_price):
+    """Close an open trade by setting its exit price."""
+    conn = get_db()
+    conn.execute('UPDATE trades SET exit_price = ? WHERE id = ? AND user_id = ?',
+                 (exit_price, trade_id, user_id))
+    conn.commit()
+    conn.close()
