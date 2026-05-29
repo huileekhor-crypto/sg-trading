@@ -465,6 +465,23 @@ body::after{content:'';position:fixed;inset:0;background:repeating-linear-gradie
 .brk-bfill.str{background:var(--amber);}
 .brk-bval{font-family:'DM Mono',monospace;font-size:10px;font-weight:500;color:var(--text-dim);margin-top:3px;}
 .brk-levels{padding:10px 18px;border-top:1px solid var(--border);display:grid;grid-template-columns:repeat(3,1fr);gap:8px;}
+.brk-regime-row{display:flex;align-items:center;gap:8px;margin-top:6px;flex-wrap:wrap;}
+.brk-regime{font-family:'DM Mono',monospace;font-size:9px;font-weight:700;letter-spacing:.1em;padding:2px 8px;border-radius:4px;}
+.brk-regime.bull{background:rgba(0,230,118,.12);color:var(--green);border:1px solid rgba(0,230,118,.28);}
+.brk-regime.bear{background:rgba(255,61,90,.12);color:var(--red);border:1px solid rgba(255,61,90,.28);}
+.brk-why-inline{font-size:11px;color:var(--text-muted);font-style:italic;}
+.brk-signals-list{padding:0 18px 4px;}
+.brk-sig-row{display:grid;grid-template-columns:18px 1fr 80px 42px;align-items:center;gap:6px;padding:5px 0;border-bottom:1px solid rgba(255,255,255,.04);}
+.brk-sig-row:last-child{border-bottom:none;}
+.brk-sig-chk{font-size:11px;font-weight:700;text-align:center;}
+.brk-sig-chk.ok{color:var(--green);}
+.brk-sig-chk.no{color:rgba(255,255,255,.2);}
+.brk-sig-body{min-width:0;}
+.brk-sig-name{font-family:'DM Mono',monospace;font-size:9px;font-weight:600;color:var(--text);letter-spacing:.06em;text-transform:uppercase;}
+.brk-sig-expl{font-size:10px;color:var(--text-muted);line-height:1.4;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.brk-sig-bar-wrap{height:4px;background:var(--bg5);border-radius:2px;overflow:hidden;}
+.brk-sig-bar-fill{height:100%;border-radius:2px;transition:width .5s ease;}
+.brk-sig-score{font-family:'DM Mono',monospace;font-size:9px;color:var(--text-muted);text-align:right;white-space:nowrap;}
 .brk-lvl{background:var(--bg3);border-radius:7px;padding:8px;text-align:center;}
 .brk-actions{padding:8px 18px 14px;display:flex;gap:6px;}
 .brk-legend{font-family:'DM Mono',monospace;font-size:10px;font-weight:600;padding:3px 8px;border-radius:4px;letter-spacing:.04em;}
@@ -940,8 +957,8 @@ body::after{content:'';position:fixed;inset:0;background:repeating-linear-gradie
     <div style="font-family:'DM Mono',monospace;font-size:9px;color:var(--text-muted);letter-spacing:.08em" id="brkLastScan">No scan yet — hit the button above</div>
     <div style="display:flex;gap:5px;flex-wrap:wrap">
       <span class="brk-legend IMMINENT">🚨 IMMINENT 80+</span>
-      <span class="brk-legend WATCH">⚠ WATCH 60+</span>
-      <span class="brk-legend RADAR">👁 RADAR 40+</span>
+      <span class="brk-legend WATCH">⚠ HIGH PROB 65+</span>
+      <span class="brk-legend RADAR">👁 DEVELOPING 50+</span>
     </div>
   </div>
 
@@ -2914,47 +2931,74 @@ async function _doBreakoutScan(url,body,method){
   }
 }
 
+function _sigBarColor(score,max){
+  const pct=score/max;
+  if(pct>=0.7)return'var(--green)';
+  if(pct>=0.4)return'var(--amber)';
+  if(pct>0)   return'rgba(255,255,255,.25)';
+  return'var(--bg5)';
+}
+
 function renderBreakoutResults(data){
   const el=document.getElementById('brkResults');
   const results=data.results||[];
+
+  // Market regime header
+  const regime=data.market_regime||'BULL';
+  const spyTxt=data.spy_price&&data.spy_ema200
+    ?` · SPY $${data.spy_price} vs 200 EMA $${data.spy_ema200}`:'';
+  const regimeHtml=`<div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;padding:10px 14px;background:var(--bg2);border:1px solid var(--border);border-radius:8px">
+    <span class="brk-regime ${regime==='BULL'?'bull':'bear'}">${regime==='BULL'?'🟢 BULL MARKET ×1.0':'🔴 BEAR MARKET ×0.65'}</span>
+    <span style="font-family:'DM Mono',monospace;font-size:9px;color:var(--text-muted)">${spyTxt}</span>
+    ${regime==='BEAR'?'<span style="font-size:11px;color:var(--text-muted)">Scores capped at 65 — only strongest setups qualify</span>':''}
+  </div>`;
+
   if(!results.length){
-    el.innerHTML=`<div class="brk-empty">
-      No setups scoring 40+ found in this list.<br>
+    el.innerHTML=regimeHtml+`<div class="brk-empty">
+      No setups scoring 50+ found in this list.<br>
       Try <strong style="color:var(--cyan)">⚡ Top 20 Stocks</strong> for pre-screened momentum names,<br>
       or add more tickers to your watchlist.
     </div>`;
     return;
   }
-  el.innerHTML=results.map((r,i)=>{
-    const sb=r.score_breakdown||{};
-    const vW=Math.round((sb.volume/30)*100);
-    const pW=Math.round((sb.price/30)*100);
-    const rW=Math.round((sb.rsi/20)*100);
-    const sW=Math.round((sb.structure/20)*100);
+
+  el.innerHTML=regimeHtml+results.map((r,i)=>{
     const chg=r.price_change||0;
+    const sigRows=(r.signal_details||[]).map(sg=>{
+      const pct=Math.round((sg.score/sg.max)*100);
+      const barColor=_sigBarColor(sg.score,sg.max);
+      return `<div class="brk-sig-row">
+        <div class="brk-sig-chk ${sg.pass?'ok':'no'}">${sg.pass?'✓':'·'}</div>
+        <div class="brk-sig-body">
+          <div class="brk-sig-name">${sg.name}</div>
+          <div class="brk-sig-expl" title="${sg.explanation}">${sg.explanation}</div>
+        </div>
+        <div>
+          <div class="brk-sig-bar-wrap"><div class="brk-sig-bar-fill" style="width:${pct}%;background:${barColor}"></div></div>
+        </div>
+        <div class="brk-sig-score">${sg.score}/${sg.max}</div>
+      </div>`;
+    }).join('');
+
     return `<div class="brk-card ${r.alert_level}" style="animation-delay:${i*.07}s">
       <div class="brk-top">
         <div class="brk-ring ${r.alert_level}">${r.score}</div>
         <div class="brk-info">
           <div class="brk-hrow">
             <span class="brk-ticker">${r.ticker}</span>
-            <span class="brk-badge ${r.alert_level}">${r.alert_emoji} ${r.alert_level}</span>
+            <span class="brk-badge ${r.alert_level}">${r.alert_emoji} ${r.alert_label||r.alert_level}</span>
             <span style="font-family:'DM Mono',monospace;font-size:11px;color:var(--text-dim)">
               $${r.price} <span class="${chg>=0?'price-chg up':'price-chg down'}">${chg>=0?'+':''}${chg}%</span>
             </span>
-            <span style="font-family:'DM Mono',monospace;font-size:9px;color:var(--text-muted)">${r.pct_from_high}% from 52wk high</span>
           </div>
-          <div class="brk-sigs">${(r.signals||[]).map(s=>`<span class="brk-sig">${s}</span>`).join('')}</div>
-          <div class="brk-why">${r.why}</div>
+          <div class="brk-regime-row">
+            <span class="brk-regime ${r.market_regime==='BULL'?'bull':'bear'}">${r.market_regime||'BULL'} ×${r.regime_mult||1}</span>
+            <span class="brk-why-inline">${r.why.split('|')[0].trim()}</span>
+          </div>
         </div>
       </div>
 
-      <div class="brk-bars">
-        <div class="brk-bitem"><div class="brk-blabel">Volume</div><div class="brk-btrack"><div class="brk-bfill vol" style="width:${vW}%"></div></div><div class="brk-bval">${sb.volume}/30</div></div>
-        <div class="brk-bitem"><div class="brk-blabel">Tightening</div><div class="brk-btrack"><div class="brk-bfill prc" style="width:${pW}%"></div></div><div class="brk-bval">${sb.price}/30</div></div>
-        <div class="brk-bitem"><div class="brk-blabel">RSI Zone</div><div class="brk-btrack"><div class="brk-bfill rsi" style="width:${rW}%"></div></div><div class="brk-bval">${sb.rsi}/20</div></div>
-        <div class="brk-bitem"><div class="brk-blabel">Structure</div><div class="brk-btrack"><div class="brk-bfill str" style="width:${sW}%"></div></div><div class="brk-bval">${sb.structure}/20</div></div>
-      </div>
+      <div class="brk-signals-list">${sigRows}</div>
 
       <div class="brk-levels">
         <div class="brk-lvl"><div class="level-label entry">Entry</div><div class="level-price">${r.entry}</div><div class="level-note">Current price</div></div>
