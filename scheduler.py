@@ -83,6 +83,21 @@ def check_price_alerts():
         logger.info(f"🔔 {fired_count} alert(s) fired")
 
 
+def run_intelligence_scan():
+    """Auto-run Intelligence Engine at 6:00pm SGT (10:00 UTC)."""
+    logger.info(f"🧠 Intelligence scan started at {datetime.now().isoformat()} UTC")
+    try:
+        from routes.intelligence import run_intelligence_scan as _scan
+        result = _scan()
+        if result:
+            count = len(result.get('setups', []))
+            logger.info(f"✅ Intelligence scan complete — {count} setup(s) found")
+        else:
+            logger.warning("⚠ Intelligence scan returned no setups")
+    except Exception as e:
+        logger.error(f"❌ Intelligence scan failed: {e}")
+
+
 def start_scheduler():
     """Start the background scheduler"""
     # Run every day at 10:00 UTC = 6:00pm SGT
@@ -91,6 +106,15 @@ def start_scheduler():
         CronTrigger(hour=10, minute=0, timezone='UTC'),
         id='morning_scan',
         name='Daily Morning Scan (6pm SGT)',
+        replace_existing=True
+    )
+
+    # Intelligence Engine — runs at 10:05 UTC (after market scan)
+    scheduler.add_job(
+        run_intelligence_scan,
+        CronTrigger(hour=10, minute=5, timezone='UTC'),
+        id='intelligence_scan',
+        name='Intelligence Engine (6:05pm SGT)',
         replace_existing=True
     )
 

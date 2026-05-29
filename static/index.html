@@ -93,6 +93,78 @@ body::after{content:'';position:fixed;inset:0;background:repeating-linear-gradie
 @keyframes priceFlash{0%{color:inherit;}40%{color:#ff9800;}100%{color:inherit;}}
 .price-flash{animation:priceFlash 1s ease;}
 
+/* ===== INTELLIGENCE ENGINE ===== */
+.intel-header{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:10px;}
+.intel-summary{font-size:13px;color:var(--text-dim);line-height:1.7;padding:12px 16px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;border-left:3px solid var(--amber);}
+.intel-section-title{font-family:'DM Mono',monospace;font-size:9px;color:var(--text-muted);letter-spacing:.14em;text-transform:uppercase;margin-bottom:12px;}
+/* Catalyst cards */
+.catalyst-card{background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:12px 15px;margin-bottom:8px;display:flex;align-items:flex-start;gap:12px;}
+.catalyst-type{font-family:'DM Mono',monospace;font-size:9px;font-weight:700;letter-spacing:.1em;padding:3px 8px;border-radius:4px;white-space:nowrap;flex-shrink:0;}
+.catalyst-type.policy{background:rgba(187,134,252,.12);color:var(--purple);border:1px solid rgba(187,134,252,.3);}
+.catalyst-type.earnings{background:rgba(0,229,255,.1);color:var(--cyan);border:1px solid rgba(0,229,255,.3);}
+.catalyst-type.sector{background:rgba(0,230,118,.1);color:var(--green);border:1px solid rgba(0,230,118,.3);}
+.catalyst-type.analyst{background:rgba(68,138,255,.12);color:var(--blue);border:1px solid rgba(68,138,255,.3);}
+.catalyst-type.macro{background:rgba(255,179,0,.1);color:var(--amber);border:1px solid rgba(255,179,0,.3);}
+.catalyst-body{flex:1;min-width:0;}
+.catalyst-headline{font-size:13px;color:var(--text);font-weight:500;margin-bottom:5px;line-height:1.5;}
+.catalyst-meta{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+.catalyst-impact{font-family:'DM Mono',monospace;font-size:9px;padding:1px 6px;border-radius:3px;}
+.catalyst-impact.bullish{color:var(--green);}
+.catalyst-impact.bearish{color:var(--red);}
+.catalyst-tickers{display:flex;gap:4px;flex-wrap:wrap;margin-top:5px;}
+.catalyst-ticker-chip{font-family:'DM Mono',monospace;font-size:9px;padding:2px 6px;background:var(--bg4);border:1px solid var(--border2);border-radius:4px;cursor:pointer;color:var(--text-dim);}
+.catalyst-ticker-chip:hover{color:var(--cyan);border-color:rgba(0,229,255,.4);}
+/* Setup cards */
+.intel-card{background:var(--bg2);border:1px solid var(--border);border-radius:12px;overflow:hidden;margin-bottom:12px;animation:fadeUp .35s ease both;}
+.intel-card.STRONG.BUY,.intel-card.STRONG{border-color:rgba(0,230,118,.4);box-shadow:0 0 14px rgba(0,230,118,.06);}
+.intel-card.BUY{border-color:rgba(0,229,255,.35);}
+.intel-card.WATCH{border-color:rgba(255,179,0,.35);}
+.intel-card-top{padding:14px 18px;display:flex;align-items:flex-start;gap:14px;}
+.intel-ring{width:64px;height:64px;border-radius:50%;display:flex;flex-direction:column;align-items:center;justify-content:center;font-family:'DM Mono',monospace;font-weight:700;flex-shrink:0;border:2px solid;}
+.intel-ring.STRONG{background:rgba(0,230,118,.1);border-color:rgba(0,230,118,.5);}
+.intel-ring.BUY{background:rgba(0,229,255,.08);border-color:rgba(0,229,255,.4);}
+.intel-ring.WATCH{background:rgba(255,179,0,.1);border-color:rgba(255,179,0,.5);}
+.intel-ring-score{font-size:18px;line-height:1;}
+.intel-ring-label{font-size:8px;letter-spacing:.06em;margin-top:2px;}
+.intel-ring.STRONG .intel-ring-score,.intel-ring.STRONG .intel-ring-label{color:var(--green);}
+.intel-ring.BUY    .intel-ring-score,.intel-ring.BUY    .intel-ring-label{color:var(--cyan);}
+.intel-ring.WATCH  .intel-ring-score,.intel-ring.WATCH  .intel-ring-label{color:var(--amber);}
+.intel-info{flex:1;min-width:0;}
+.intel-ticker-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:4px;}
+.intel-ticker{font-family:'DM Mono',monospace;font-size:20px;font-weight:700;}
+.intel-company{font-size:12px;color:var(--text-muted);}
+.intel-badge{font-family:'DM Mono',monospace;font-size:10px;font-weight:700;padding:3px 10px;border-radius:5px;border:1px solid;}
+.intel-badge.STRONG{background:rgba(0,230,118,.1);color:var(--green);border-color:rgba(0,230,118,.3);}
+.intel-badge.BUY{background:rgba(0,229,255,.08);color:var(--cyan);border-color:rgba(0,229,255,.3);}
+.intel-badge.WATCH{background:rgba(255,179,0,.08);color:var(--amber);border-color:rgba(255,179,0,.3);}
+.intel-horizon{font-family:'DM Mono',monospace;font-size:9px;color:var(--text-muted);}
+.intel-body{padding:0 18px 14px;}
+.intel-row{margin-bottom:8px;}
+.intel-row-lbl{font-family:'DM Mono',monospace;font-size:9px;color:var(--text-muted);letter-spacing:.1em;margin-bottom:2px;}
+.intel-row-txt{font-size:12px;color:var(--text-dim);line-height:1.6;}
+.intel-risk{font-size:12px;color:rgba(255,61,90,.8);margin-top:4px;}
+.intel-action{font-size:12px;font-weight:500;color:var(--amber);margin-top:6px;}
+.intel-learn{font-size:11px;color:var(--text-muted);font-style:italic;margin-top:6px;padding:8px 10px;background:var(--bg3);border-radius:6px;border-left:2px solid var(--border2);}
+.intel-levels{padding:10px 18px;border-top:1px solid var(--border);display:grid;grid-template-columns:repeat(4,1fr);gap:6px;}
+.intel-score-bars{padding:8px 18px;border-top:1px solid var(--border);display:grid;grid-template-columns:repeat(3,1fr);gap:8px;}
+.intel-sbar{text-align:center;}
+.intel-sbar-lbl{font-family:'DM Mono',monospace;font-size:8px;color:var(--text-muted);letter-spacing:.08em;margin-bottom:3px;}
+.intel-sbar-track{height:3px;background:var(--bg5);border-radius:2px;overflow:hidden;}
+.intel-sbar-fill{height:100%;border-radius:2px;}
+.intel-sbar-val{font-family:'DM Mono',monospace;font-size:10px;color:var(--text-dim);margin-top:2px;}
+.intel-actions{padding:10px 18px;border-top:1px solid var(--border);display:flex;gap:6px;}
+/* Sector heat map */
+.sector-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:8px;}
+.sector-cell{background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:10px 12px;text-align:center;transition:border-color .2s;}
+.sector-cell.hot{border-color:rgba(0,230,118,.45);background:rgba(0,230,118,.04);}
+.sector-cell.warm{border-color:rgba(255,179,0,.4);background:rgba(255,179,0,.03);}
+.sector-cell-name{font-family:'DM Mono',monospace;font-size:10px;font-weight:600;color:var(--text);}
+.sector-cell-dot{width:8px;height:8px;border-radius:50%;margin:5px auto 0;flex-shrink:0;}
+.sector-cell.hot  .sector-cell-dot{background:var(--green);box-shadow:0 0 6px var(--green);}
+.sector-cell.warm .sector-cell-dot{background:var(--amber);box-shadow:0 0 4px var(--amber);}
+.sector-cell.cold .sector-cell-dot{background:var(--bg5);}
+.intel-empty{text-align:center;padding:40px;color:var(--text-muted);font-family:'DM Mono',monospace;font-size:11px;line-height:1.8;}
+
 /* ===== SOCIAL SENTIMENT ===== */
 .sent-block{padding:14px 18px;border-top:1px solid var(--border);}
 .sent-row{display:flex;align-items:flex-start;gap:10px;margin-bottom:10px;}
@@ -570,6 +642,7 @@ body::after{content:'';position:fixed;inset:0;background:repeating-linear-gradie
   <button class="tab" onclick="switchTab('alerts')" id="alertsTab">🔔 Alerts<span class="alert-badge" id="alertBadge" style="display:none"></span></button>
   <button class="tab" onclick="switchTab('breakout')">🚨 Breakout</button>
   <button class="tab" onclick="switchTab('earnings')">📅 Calendar</button>
+  <button class="tab" onclick="switchTab('intelligence')">🧠 Intelligence</button>
 </div>
 
 <!-- ===== SCREENER ===== -->
@@ -1053,6 +1126,62 @@ body::after{content:'';position:fixed;inset:0;background:repeating-linear-gradie
 
 </div>
 
+<!-- ===== INTELLIGENCE ENGINE ===== -->
+<div class="panel" id="panel-intelligence">
+
+  <div class="intel-header">
+    <div>
+      <div style="font-family:'DM Mono',monospace;font-size:9px;color:var(--text-muted);letter-spacing:.14em;margin-bottom:4px">INTELLIGENCE ENGINE</div>
+      <div style="font-size:13px;color:var(--text-dim)">AI-powered market catalyst analysis · Top 5 daily setups</div>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+      <button class="btn btn-ghost" onclick="loadIntelLatest()" style="padding:7px 14px;font-size:10px">📋 Load Latest</button>
+      <button class="btn btn-primary" id="intelScanBtn" onclick="runIntelScan()" style="padding:7px 16px;font-size:10px">🧠 Run Scan (~2 min)</button>
+    </div>
+  </div>
+
+  <div class="err" id="intelError"></div>
+  <div class="loading" id="intelLoading">
+    <div class="loading-ticker">🧠</div>
+    <div id="intelSteps">
+      <div class="loading-step" id="intelS0">[ ] Scanning news &amp; social media for catalysts…</div>
+      <div class="loading-step" id="intelS1">[ ] Scoring candidate stocks…</div>
+      <div class="loading-step" id="intelS2">[ ] Running technical analysis…</div>
+      <div class="loading-step" id="intelS3">[ ] Generating AI verdicts…</div>
+      <div class="loading-step" id="intelS4">[ ] Finalising top 5 setups…</div>
+    </div>
+  </div>
+
+  <div id="intelResults" style="display:none">
+    <!-- Section 1: Catalysts -->
+    <div style="margin-bottom:22px">
+      <div class="intel-section-title">TODAY'S CATALYSTS</div>
+      <div id="intelCatalysts"></div>
+    </div>
+
+    <!-- Section 2: Top 5 Setups -->
+    <div style="margin-bottom:22px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:6px">
+        <div class="intel-section-title" style="margin-bottom:0">TOP 5 SETUPS</div>
+        <div id="intelRunAt" style="font-family:'DM Mono',monospace;font-size:9px;color:var(--text-muted)"></div>
+      </div>
+      <div id="intelSetups"></div>
+    </div>
+
+    <!-- Section 3: Sector Heat Map -->
+    <div style="margin-bottom:22px">
+      <div class="intel-section-title">SECTOR HEAT MAP</div>
+      <div class="sector-grid" id="intelSectorGrid"></div>
+      <div style="display:flex;gap:14px;margin-top:10px">
+        <span style="font-family:'DM Mono',monospace;font-size:9px;color:var(--text-muted)"><span style="color:var(--green)">●</span> Catalyst + Setup aligned</span>
+        <span style="font-family:'DM Mono',monospace;font-size:9px;color:var(--text-muted)"><span style="color:var(--amber)">●</span> Partial signal</span>
+        <span style="font-family:'DM Mono',monospace;font-size:9px;color:var(--text-muted)"><span style="color:var(--bg5)">●</span> No signal</span>
+      </div>
+    </div>
+  </div>
+
+</div>
+
 <div class="disclaimer"><strong>Not financial advice.</strong> Educational purposes only. Always do your own analysis before trading.</div>
 </div>
 
@@ -1083,7 +1212,7 @@ setInterval(updateClock,1000); updateClock();
 
 // ===== TABS =====
 function switchTab(tab){
-  const tabs=['screener','watchlist','scanner','scenarios','chart','journal','alerts','breakout','earnings'];
+  const tabs=['screener','watchlist','scanner','scenarios','chart','journal','alerts','breakout','earnings','intelligence'];
   document.querySelectorAll('.tabs>.tab').forEach((t,i)=>t.classList.toggle('active',tabs[i]===tab));
   document.querySelectorAll('.panel').forEach(p=>p.classList.remove('active'));
   document.getElementById('panel-'+tab).classList.add('active');
@@ -1091,6 +1220,7 @@ function switchTab(tab){
   if(tab==='journal')loadJournal();
   if(tab==='alerts'){loadAlerts();ackAlerts();loadRecipients();loadTrending();}
   if(tab==='earnings')loadEarningsCalendar();
+  if(tab==='intelligence')loadIntelLatest();
 }
 
 // ===== WATCHLIST STATE (localStorage) =====
@@ -2909,6 +3039,194 @@ function renderEarningsWarning(events){
 
 // Silently load earnings warnings 3s after page load
 setTimeout(()=>loadEarningsCalendar(true), 3000);
+
+// ===== INTELLIGENCE ENGINE =====
+let _intelTimer = null;
+
+function _intelRingClass(level){
+  if(!level) return 'WATCH';
+  const l = level.toUpperCase();
+  if(l.includes('STRONG')) return 'STRONG';
+  if(l==='BUY') return 'BUY';
+  return 'WATCH';
+}
+function _intelRingLabel(level){
+  if(!level) return 'WATCH';
+  const l = level.toUpperCase();
+  if(l.includes('STRONG')) return 'S.BUY';
+  if(l==='BUY') return 'BUY';
+  return 'WATCH';
+}
+
+async function runIntelScan(){
+  const btn=document.getElementById('intelScanBtn');
+  btn.disabled=true;
+  document.getElementById('intelError').classList.remove('show');
+  document.getElementById('intelResults').style.display='none';
+  const loadEl=document.getElementById('intelLoading');
+  loadEl.classList.add('show');
+
+  const steps=document.querySelectorAll('#intelSteps .loading-step');
+  let si=0;
+  const iv=setInterval(()=>{
+    if(si>0&&steps[si-1]){steps[si-1].className='loading-step done';steps[si-1].textContent='[✓] '+steps[si-1].textContent.replace('[→] ','');}
+    if(steps[si]){steps[si].className='loading-step active';steps[si].textContent='[→] '+steps[si].textContent.replace('[ ] ','');}
+    si++;
+    if(si>=steps.length)clearInterval(iv);
+  },28000);
+
+  try{
+    const res=await fetch('/api/intelligence/scan',{signal:AbortSignal.timeout(180000)});
+    const data=await res.json();
+    clearInterval(iv);
+    if(data.error)throw new Error(data.error);
+    renderIntelligence(data);
+  }catch(e){
+    clearInterval(iv);
+    const er=document.getElementById('intelError');
+    er.textContent='⚠ '+friendlyError(e.message);
+    er.classList.add('show');
+  }finally{
+    btn.disabled=false;
+    loadEl.classList.remove('show');
+  }
+}
+
+async function loadIntelLatest(){
+  try{
+    const res=await fetch('/api/intelligence/latest');
+    const data=await res.json();
+    if(data.error){
+      document.getElementById('intelResults').style.display='none';
+      return;
+    }
+    renderIntelligence(data);
+  }catch(e){}
+}
+
+function renderIntelligence(data){
+  renderIntelCatalysts(data.catalysts||[]);
+  renderIntelSetups(data.setups||[],data.market_summary||'');
+  renderSectorHeat(data.sector_heat||{});
+  const el=document.getElementById('intelRunAt');
+  if(el&&data.run_at){
+    const d=new Date(data.run_at);
+    el.textContent=`Last scan: ${d.toLocaleString('en-SG',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit',timeZone:'Asia/Singapore'})} SGT`;
+  }
+  document.getElementById('intelResults').style.display='';
+}
+
+function renderIntelCatalysts(catalysts){
+  const el=document.getElementById('intelCatalysts');
+  if(!catalysts.length){
+    el.innerHTML='<div style="font-size:12px;color:var(--text-muted);padding:10px 0">No major catalysts identified in this scan.</div>';
+    return;
+  }
+  el.innerHTML=catalysts.map(cat=>{
+    const impact=cat.impact||'bullish';
+    const tickers=(cat.affected_tickers||[]).slice(0,6);
+    const conf=cat.confidence||50;
+    return`<div class="catalyst-card">
+      <span class="catalyst-type ${cat.type||'macro'}">${(cat.type||'MACRO').toUpperCase()}</span>
+      <div class="catalyst-body">
+        <div class="catalyst-headline">${cat.headline||''}</div>
+        <div class="catalyst-meta">
+          <span class="catalyst-impact ${impact}">${impact==='bullish'?'▲ BULLISH':'▼ BEARISH'}</span>
+          <span style="font-family:'DM Mono',monospace;font-size:9px;color:var(--text-muted)">${cat.urgency||''}</span>
+          <span style="font-family:'DM Mono',monospace;font-size:9px;color:var(--text-muted)">${conf}% confidence</span>
+        </div>
+        ${tickers.length?`<div class="catalyst-tickers">${tickers.map(t=>`<span class="catalyst-ticker-chip" onclick="document.getElementById('tickerInput').value='${t}';switchTab('screener');runScreener()">${t}</span>`).join('')}</div>`:''}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function renderIntelSetups(setups, summary){
+  const el=document.getElementById('intelSetups');
+  if(summary){
+    el.insertAdjacentHTML('beforebegin',`<div class="intel-summary" style="margin-bottom:14px">${summary}</div>`);
+  }
+  if(!setups.length){
+    el.innerHTML='<div class="intel-empty">No setups found.<br>Run a fresh scan or check back after 6pm SGT.</div>';
+    return;
+  }
+  el.innerHTML=setups.map((s,i)=>{
+    const rc=_intelRingClass(s.alert_level);
+    const rl=_intelRingLabel(s.alert_level);
+    const chg=s.price_change||0;
+    const alertKey=s.alert_level?.toUpperCase().includes('STRONG')?'STRONG':s.alert_level?.toUpperCase()||'WATCH';
+    return`<div class="intel-card ${alertKey}" style="animation-delay:${i*.08}s">
+      <div class="intel-card-top">
+        <div class="intel-ring ${rc}">
+          <div class="intel-ring-score">${s.combined_score}</div>
+          <div class="intel-ring-label">${rl}</div>
+        </div>
+        <div class="intel-info">
+          <div class="intel-ticker-row">
+            <span class="intel-ticker">${s.ticker}</span>
+            <span class="intel-badge ${alertKey}">${s.alert_level||'WATCH'}</span>
+            <span style="font-family:'DM Mono',monospace;font-size:11px;color:var(--text-dim)">
+              ${s.price?`$${s.price} <span class="${chg>=0?'price-chg up':'price-chg down'}">${chg>=0?'+':''}${chg}%</span>`:''}
+            </span>
+          </div>
+          <div class="intel-company">${s.company||''}</div>
+          <div class="intel-horizon" style="margin-top:4px">⏱ ${s.time_horizon||'—'}</div>
+        </div>
+      </div>
+
+      <div class="intel-score-bars">
+        <div class="intel-sbar">
+          <div class="intel-sbar-lbl">CATALYST</div>
+          <div class="intel-sbar-track"><div class="intel-sbar-fill" style="width:${s.catalyst_score}%;background:var(--amber)"></div></div>
+          <div class="intel-sbar-val">${s.catalyst_score}/100</div>
+        </div>
+        <div class="intel-sbar">
+          <div class="intel-sbar-lbl">BREAKOUT</div>
+          <div class="intel-sbar-track"><div class="intel-sbar-fill" style="width:${s.breakout_score}%;background:var(--cyan)"></div></div>
+          <div class="intel-sbar-val">${s.breakout_score}/100</div>
+        </div>
+        <div class="intel-sbar">
+          <div class="intel-sbar-lbl">SENTIMENT</div>
+          <div class="intel-sbar-track"><div class="intel-sbar-fill" style="width:${s.sentiment_score}%;background:var(--purple)"></div></div>
+          <div class="intel-sbar-val">${s.sentiment_score}/100</div>
+        </div>
+      </div>
+
+      <div class="intel-body">
+        ${s.why_now?`<div class="intel-row"><div class="intel-row-lbl">WHY NOW</div><div class="intel-row-txt">${s.why_now}</div></div>`:''}
+        ${s.technical_status?`<div class="intel-row"><div class="intel-row-lbl">TECHNICAL</div><div class="intel-row-txt">${s.technical_status}</div></div>`:''}
+        ${s.action?`<div class="intel-action">→ ${s.action}</div>`:''}
+        ${s.risk_warning?`<div class="intel-risk">⚠ ${s.risk_warning}</div>`:''}
+        ${s.learning_note?`<div class="intel-learn">💡 ${s.learning_note}</div>`:''}
+      </div>
+
+      <div class="intel-levels">
+        <div class="brk-lvl"><div class="level-label entry">Entry</div><div class="level-price">${s.entry||'—'}</div></div>
+        <div class="brk-lvl"><div class="level-label stop">Stop</div><div class="level-price">${s.stop||'—'}</div></div>
+        <div class="brk-lvl"><div class="level-label target">Target</div><div class="level-price">${s.target||'—'}</div></div>
+        <div class="brk-lvl"><div class="level-note" style="font-family:'DM Mono',monospace;font-size:9px;padding-top:14px">${s.rr?`${s.rr}:1 R/R`:''}</div></div>
+      </div>
+
+      <div class="intel-actions">
+        <button class="btn btn-primary" style="flex:1;font-size:10px;padding:8px" onclick="analyseAndChart('${s.ticker}')">📊 Full Analysis</button>
+        <button class="btn btn-ghost" style="flex:1;font-size:10px;padding:8px" onclick="document.getElementById('chartInput').value='${s.ticker}';switchTab('chart');loadChart()">📈 Chart</button>
+        <button class="btn btn-ghost" style="font-size:10px;padding:8px 12px" onclick="addTicker('${s.ticker}');showToast('${s.ticker} added')">+ WL</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function renderSectorHeat(heat){
+  const el=document.getElementById('intelSectorGrid');
+  const sectors=['AI','Drone/Defence','Quantum','Semiconductor','Cloud','EV','Crypto','Energy','Finance','Healthcare'];
+  el.innerHTML=sectors.map(s=>{
+    const status=heat[s]||'cold';
+    return`<div class="sector-cell ${status}">
+      <div class="sector-cell-name">${s}</div>
+      <div class="sector-cell-dot"></div>
+    </div>`;
+  }).join('');
+}
 
 // ===== SOCIAL SENTIMENT =====
 function _sentColor(ratio){

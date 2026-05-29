@@ -162,6 +162,47 @@ def send_breakout_alert(stock, recipients):
     return ok, errors
 
 
+def send_intelligence_email(setups, recipients):
+    """Email top Intelligence Engine setups (score >= 80) to recipients."""
+    if not setups:
+        return 0, []
+    rows = ''.join(
+        f'<tr style="border-bottom:1px solid #1F2535">'
+        f'<td style="padding:10px 0;font-family:\'Courier New\',Courier,monospace;font-size:16px;font-weight:700;color:#C8D8F0">{s["ticker"]}</td>'
+        f'<td style="padding:10px 0;font-family:\'Courier New\',Courier,monospace;font-size:12px;color:#FFB300">{s["alert_level"]}</td>'
+        f'<td style="padding:10px 0;font-family:\'Courier New\',Courier,monospace;font-size:13px;font-weight:700;color:#00E5FF">{s["combined_score"]}/100</td>'
+        f'<td style="padding:10px 0;font-size:13px;color:#8898B8">{s.get("why_now","")[:80]}…</td>'
+        f'</tr>'
+        for s in setups[:5]
+    )
+    html = f"""<!DOCTYPE html><html><head><meta charset="UTF-8"></head>
+<body style="margin:0;padding:0;background:#08090C;font-family:Arial,sans-serif">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#08090C;padding:24px 0">
+<tr><td align="center">
+<table width="600" cellpadding="0" cellspacing="0" style="background:#0D0F14;border:1px solid #2A3348;border-radius:12px;overflow:hidden;max-width:600px">
+  <tr><td style="background:linear-gradient(90deg,#FF8C00,#FFB300);padding:4px 0"></td></tr>
+  <tr><td style="padding:24px 28px;border-bottom:1px solid #1F2535">
+    <div style="font-family:'Courier New',monospace;font-size:10px;color:#5A6E88;letter-spacing:2px;margin-bottom:6px">SG TRADING · INTELLIGENCE ENGINE</div>
+    <div style="font-size:22px;font-weight:700;color:#C8D8F0">🧠 Today's Top Setups</div>
+    <div style="font-size:13px;color:#8898B8;margin-top:4px">{datetime.utcnow().strftime('%B %d, %Y · %H:%M UTC')}</div>
+  </td></tr>
+  <tr><td style="padding:20px 28px">
+    <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse">{rows}</table>
+  </td></tr>
+  <tr><td style="padding:16px 28px;text-align:center;border-top:1px solid #1F2535">
+    <a href="{APP_URL}/dashboard" style="display:inline-block;background:#FF8C00;color:#08090C;font-family:'Courier New',monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;text-decoration:none;padding:10px 28px;border-radius:8px">VIEW INTELLIGENCE TAB →</a>
+  </td></tr>
+  <tr><td style="padding:14px 28px;text-align:center"><div style="font-size:11px;color:#5A6E88">Not financial advice · SG Trading Dashboard</div></td></tr>
+</table></td></tr></table></body></html>"""
+    subject = f"🧠 Intelligence: {len(setups)} Strong Setup{'s' if len(setups)!=1 else ''} — {datetime.utcnow().strftime('%b %d')}"
+    ok, errors = 0, []
+    for r in recipients:
+        success, err = _send_one(subject, html, r['email'], r.get('name'))
+        if success: ok += 1
+        else: errors.append(f"{r['email']}: {err}")
+    return ok, errors
+
+
 def send_test_email(to_email, to_name=None):
     """Send a configuration test email. Returns (success, error_or_None)."""
     return _send_one(
