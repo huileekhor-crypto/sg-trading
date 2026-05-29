@@ -83,6 +83,36 @@ body::after{content:'';position:fixed;inset:0;background:repeating-linear-gradie
 .price-chg{font-family:'DM Mono',monospace;font-size:13px;}
 .price-chg.up{color:var(--green);}
 .price-chg.down{color:var(--red);}
+/* Extended hours trading */
+.ext-hours-wrap{margin-top:8px;border-radius:8px;overflow:hidden;border:1px solid var(--border);}
+.ext-session{padding:8px 12px;border-bottom:1px solid var(--border);transition:opacity .2s;}
+.ext-session:last-child{border-bottom:none;}
+.ext-session.session-active{background:rgba(255,140,0,.07);border-left:2px solid #FF8C00;}
+.ext-session.session-dim{opacity:.45;}
+.ext-session-hdr{font-family:'DM Mono',monospace;font-size:9px;letter-spacing:.12em;color:var(--text-muted);margin-bottom:4px;display:flex;align-items:center;gap:6px;}
+.ext-session-hdr.active{color:#FF8C00;}
+.ext-session-hdr .sgt-sub{font-size:8px;color:var(--text-muted);opacity:.7;}
+.ext-price-row{display:flex;align-items:baseline;gap:7px;flex-wrap:wrap;}
+.ext-price{font-family:'DM Mono',monospace;font-size:15px;font-weight:700;color:var(--text);}
+.ext-chg{font-family:'DM Mono',monospace;font-size:11px;}
+.ext-chg.up{color:var(--green);}
+.ext-chg.down{color:var(--red);}
+.ext-time{font-family:'DM Mono',monospace;font-size:8px;color:var(--text-muted);margin-left:auto;}
+.ext-ohlcv{font-family:'DM Mono',monospace;font-size:9px;color:var(--text-dim);margin-top:3px;display:flex;gap:10px;flex-wrap:wrap;}
+.sgt-hint{font-family:'DM Mono',monospace;font-size:9px;color:var(--text-muted);margin-top:6px;padding:4px 8px;border-radius:4px;background:var(--bg3);display:inline-block;}
+.sgt-hint.open{color:var(--green);}
+.sgt-hint.pre{color:var(--amber);}
+.sgt-hint.post{color:var(--blue);}
+/* Earnings banner */
+.earnings-banner{margin-top:8px;padding:9px 13px;border-radius:7px;border:1px solid rgba(255,179,0,.35);background:rgba(255,179,0,.06);}
+.earnings-banner.amc{border-color:rgba(255,140,0,.45);background:rgba(255,140,0,.07);}
+.earnings-banner-title{font-family:'DM Mono',monospace;font-size:10px;font-weight:700;color:var(--amber);margin-bottom:3px;}
+.earnings-banner-body{font-size:12px;color:var(--text-dim);line-height:1.55;}
+/* Watchlist chip ext hours */
+.wl-ext{font-family:'DM Mono',monospace;font-size:9px;color:var(--text-muted);display:flex;align-items:center;gap:3px;}
+.wl-ext .up{color:var(--green);}
+.wl-ext .down{color:var(--red);}
+
 .market-badge{display:inline-block;font-family:'DM Mono',monospace;font-size:9px;letter-spacing:.1em;padding:2px 7px;border-radius:4px;font-weight:600;margin-left:6px;vertical-align:middle;}
 .market-badge.open{background:rgba(0,200,83,.15);color:#00c853;border:1px solid rgba(0,200,83,.3);}
 .market-badge.pre{background:rgba(255,179,0,.15);color:var(--amber);border:1px solid rgba(255,179,0,.3);}
@@ -693,6 +723,12 @@ body::after{content:'';position:fixed;inset:0;background:repeating-linear-gradie
           <span>Vol: <span id="resVolume">—</span></span>
         </div>
         <div style="margin-top:3px"><span class="price-updated-txt" id="resPriceUpdated" style="display:none"></span></div>
+        <!-- Extended hours block (pre-market / regular / after-hours) -->
+        <div id="resExtHours" style="display:none"></div>
+        <!-- SGT time hint -->
+        <div id="resSgtHint" style="display:none"></div>
+        <!-- Earnings night / morning banner -->
+        <div id="resEarningsBanner" style="display:none"></div>
         <div class="card-company" id="resName">—</div>
         <div class="card-sector" id="resSector">—</div>
       </div>
@@ -1306,6 +1342,23 @@ const signalColorMap={
   HOLD:'neutral', SELL:'red'
 };
 
+function _wlExtTag(cache){
+  if(!cache) return '';
+  const pm = cache.pre_market, ah = cache.post_market;
+  const ms = (cache.market_status||'').toUpperCase();
+  const showAh = ah?.available && (ms==='POST'||ms==='CLOSED');
+  const showPm = pm?.available && ms.includes('PRE');
+  if(showAh){
+    const up=ah.change_pct>=0;
+    return `<span class="wl-ext">AH:$${ah.price} <span class="${up?'up':'down'}">${up?'▲':'▼'}${Math.abs(ah.change_pct)}%</span></span>`;
+  }
+  if(showPm){
+    const up=pm.change_pct>=0;
+    return `<span class="wl-ext">PM:$${pm.price} <span class="${up?'up':'down'}">${up?'▲':'▼'}${Math.abs(pm.change_pct)}%</span></span>`;
+  }
+  return '';
+}
+
 function renderWatchlistChips(){
   const el=document.getElementById('watchlistChips');
   if(!watchlist.length){el.innerHTML='<div class="wl-empty">No tickers yet — add some above</div>';return;}
@@ -1316,6 +1369,7 @@ function renderWatchlistChips(){
       <div class="wl-signal-dot ${sc}"></div>
       <span class="wl-ticker">${t}</span>
       ${cache?`<span style="font-size:9px;color:var(--text-muted)">${cache.tier}</span>`:''}
+      ${_wlExtTag(cache)}
       <span class="remove" onclick="event.stopPropagation();removeTicker('${t}')" title="Remove">×</span>
     </div>`;
   }).join('');
@@ -1341,7 +1395,7 @@ async function scanAll(){
       const res=await fetch('/api/screener/'+ticker);
       const data=await res.json();
       if(!data.error){
-        wlCache[ticker]={signal:data.signal,tier:data.tier,price:data.price,signal_label:data.signal_label,signal_color:data.signal_color};
+        wlCache[ticker]={signal:data.signal,tier:data.tier,price:data.price,signal_label:data.signal_label,signal_color:data.signal_color,pre_market:data.pre_market,post_market:data.post_market,market_status:data.market_status};
         results.push(data);
       }
     }catch(e){console.warn(ticker,e);}
@@ -1414,6 +1468,178 @@ function friendlyError(msg) {
   return msg;
 }
 
+// ===== EXTENDED HOURS & SGT HELPERS =====
+
+function _extChg(val, pct){
+  if(val===undefined||val===null) return '';
+  const up=val>=0;
+  return `<span class="ext-chg ${up?'up':'down'}">${up?'▲':'▼'} ${up?'+':''}${parseFloat(val).toFixed(2)} (${up?'+':''}${parseFloat(pct).toFixed(2)}%)</span>`;
+}
+
+function getSgtSessionInfo(){
+  // Returns {session, emoji, etHours, sgtHours, hint, hintClass}
+  const now = new Date();
+  // SGT = UTC+8
+  const sgtH = (now.getUTCHours() + 8) % 24;
+  const sgtM = now.getUTCMinutes();
+  const sgtMins = sgtH*60 + sgtM;
+  const dow = new Date(now.getTime() + 8*3600*1000).getUTCDay(); // SGT weekday
+  const isWeekend = dow===0||dow===6;
+
+  // US market in SGT (EDT = UTC-4):
+  //  Pre-market:   4:00 PM - 9:30 PM SGT  (960-1170 mins)
+  //  Regular:      9:30 PM - 4:00 AM SGT  (1170-1680 mins, wraps)
+  //  After-hours:  4:00 AM - 8:00 AM SGT  (240-480 mins)
+  const inRegular = sgtMins>=1170 || sgtMins<240;
+  const inPost    = sgtMins>=240  && sgtMins<480;
+  const inPre     = sgtMins>=960  && sgtMins<1170;
+
+  if(isWeekend) return {session:'CLOSED',emoji:'💤',
+    etHours:'Closed weekends',sgtHours:'Closed weekends',
+    hint:'US Market closed · Opens Mon 9:30 PM SGT',hintClass:''};
+  if(inPre)     return {session:'PRE',emoji:'🌅',
+    etHours:'4:00 AM – 9:30 AM ET',sgtHours:'4:00 PM – 9:30 PM SGT',
+    hint:'Pre-Market active · Regular opens 9:30 PM SGT',hintClass:'pre'};
+  if(inRegular) return {session:'REGULAR',emoji:'📈',
+    etHours:'9:30 AM – 4:00 PM ET',sgtHours:'9:30 PM – 4:00 AM SGT',
+    hint:'US Market OPEN · Closes 4:00 AM SGT',hintClass:'open'};
+  if(inPost)    return {session:'POST',emoji:'🌙',
+    etHours:'4:00 PM – 8:00 PM ET',sgtHours:'4:00 AM – 8:00 AM SGT',
+    hint:'After-Hours active · 4:00 AM – 8:00 AM SGT',hintClass:'post'};
+  return {session:'CLOSED',emoji:'💤',
+    etHours:'Closed',sgtHours:'Closed',
+    hint:'US Market closed · Pre-Market opens 4:00 PM SGT',hintClass:''};
+}
+
+function renderExtHours(data){
+  const extEl  = document.getElementById('resExtHours');
+  const hintEl = document.getElementById('resSgtHint');
+  if(!extEl) return;
+
+  const pm  = data.pre_market;
+  const ah  = data.post_market;
+  const ms  = (data.market_status||'').toUpperCase();
+  const sess = getSgtSessionInfo();
+
+  // Determine which session to highlight based on market_status from data
+  const activeFromData = ms.includes('PRE') ? 'PRE'
+                       : (ms==='POST'||ms.includes('POST')) ? 'POST'
+                       : (ms==='REGULAR'||ms==='OPEN') ? 'REGULAR'
+                       : sess.session;
+
+  // Build the three-section block if any ext data exists
+  if(!pm?.available && !ah?.available){
+    extEl.style.display='none';
+    if(hintEl){hintEl.className='sgt-hint '+sess.hintClass;hintEl.textContent=sess.emoji+' '+sess.hint;hintEl.style.display='';}
+    return;
+  }
+
+  let html = '<div class="ext-hours-wrap">';
+
+  // Pre-market
+  if(pm?.available){
+    const active = activeFromData==='PRE';
+    html += `<div class="ext-session ${active?'session-active':'session-dim'}">
+      <div class="ext-session-hdr${active?' active':''}">
+        🌅 PRE-MARKET <span class="sgt-sub">4:00 AM–9:30 AM ET · 4:00 PM–9:30 PM SGT</span>
+      </div>
+      <div class="ext-price-row">
+        <span class="ext-price">$${pm.price.toFixed(2)}</span>
+        ${_extChg(pm.change, pm.change_pct)}
+        ${pm.time?`<span class="ext-time">${pm.time}</span>`:''}
+      </div>
+    </div>`;
+  }
+
+  // Regular session
+  const regActive = activeFromData==='REGULAR';
+  html += `<div class="ext-session ${regActive?'session-active':''}">
+    <div class="ext-session-hdr${regActive?' active':''}">
+      📈 REGULAR SESSION <span class="sgt-sub">9:30 AM–4:00 PM ET · 9:30 PM–4:00 AM SGT</span>
+    </div>
+    <div class="ext-price-row">
+      <span class="ext-price">$${parseFloat(data.price||0).toFixed(2)}</span>
+      ${_extChg(data.change, data.change_pct)}
+    </div>
+    <div class="ext-ohlcv">
+      ${data.high?`H: $${parseFloat(data.high).toFixed(2)}`:''}
+      ${data.low?`L: $${parseFloat(data.low).toFixed(2)}`:''}
+      ${data.volume?`Vol: ${fmtVolume(data.volume)}`:''}
+    </div>
+  </div>`;
+
+  // After-hours
+  if(ah?.available){
+    const active = activeFromData==='POST';
+    html += `<div class="ext-session ${active?'session-active':'session-dim'}">
+      <div class="ext-session-hdr${active?' active':''}">
+        🌙 AFTER-HOURS <span class="sgt-sub">4:05 PM–8:00 PM ET · 4:05 AM–8:00 AM SGT</span>
+      </div>
+      <div class="ext-price-row">
+        <span class="ext-price">$${ah.price.toFixed(2)}</span>
+        ${_extChg(ah.change, ah.change_pct)}
+        ${ah.time?`<span class="ext-time">${ah.time}</span>`:''}
+      </div>
+    </div>`;
+  }
+
+  html += '</div>';
+  extEl.innerHTML = html;
+  extEl.style.display = '';
+
+  // SGT hint
+  if(hintEl){
+    hintEl.className = 'sgt-hint '+sess.hintClass;
+    hintEl.textContent = sess.emoji+' '+sess.hint;
+    hintEl.style.display = '';
+  }
+}
+
+function renderEarningsBanner(ticker, finData, priceData){
+  const el = document.getElementById('resEarningsBanner');
+  if(!el) return;
+  el.style.display = 'none';
+  el.innerHTML = '';
+  if(!finData || finData.error) return;
+
+  const cd  = finData.earnings_countdown || '';
+  const ne  = finData.next_earnings || '';
+  const ah  = priceData?.post_market;
+  const pm  = priceData?.pre_market;
+  const today = new Date().toISOString().split('T')[0];
+  const isToday = ne === today || cd.includes('0 days');
+  if(!isToday) return;
+
+  // Try to get the hour (BMO/AMC) from calendar data if loaded
+  let hour = 'TBD';
+  if(window._calData){
+    const ev = (window._calData.events||[]).find(e=>e.ticker===ticker&&e.days_until===0);
+    if(ev) hour = ev.hour;
+  }
+
+  let html = '';
+  if(hour==='AMC'||(!hour&&ah?.available)){
+    const ahMove = ah?.available ? `Current after-hours move: <strong style="color:${ah.change_pct>=0?'var(--green)':'var(--red)'}">${ah.change_pct>=0?'▲ +':'▼ '}${Math.abs(ah.change_pct)}%</strong>` : '';
+    html=`<div class="earnings-banner amc">
+      <div class="earnings-banner-title">📅 Reports after market close tonight (AMC)</div>
+      <div class="earnings-banner-body">${ahMove}${ahMove?' · ':''}<span style="color:var(--text-muted)">Watch for gap up/down at 9:30 PM SGT</span></div>
+    </div>`;
+  } else if(hour==='BMO'||(!hour&&pm?.available)){
+    const pmMove = pm?.available ? `Pre-market reaction: <strong style="color:${pm.change_pct>=0?'var(--green)':'var(--red)'}">${pm.change_pct>=0?'▲ +':'▼ '}${Math.abs(pm.change_pct)}%</strong>` : '';
+    html=`<div class="earnings-banner">
+      <div class="earnings-banner-title">📅 Reported before market open today (BMO)</div>
+      <div class="earnings-banner-body">${pmMove}${pmMove?' — now confirmed in regular session':''}</div>
+    </div>`;
+  } else if(isToday){
+    html=`<div class="earnings-banner">
+      <div class="earnings-banner-title">📅 Earnings today — ${hour||'time TBD'}</div>
+      <div class="earnings-banner-body" style="color:var(--text-muted)">Monitor pre/after-hours closely. Elevated volatility expected.</div>
+    </div>`;
+  }
+
+  if(html){el.innerHTML=html;el.style.display='';}
+}
+
 // ===== SCREENER =====
 const STEPS=['Fetching price data & technicals','Detecting trade signal','Running TA confluence analysis','Calculating ATR-based levels','Generating AI trade thesis','Fetching fundamentals & earnings'];
 let lastResult=null;
@@ -1431,6 +1657,9 @@ async function runScreener(){
   document.getElementById('resMarketStatus').style.display='none';
   const upd=document.getElementById('resPriceUpdated');if(upd)upd.style.display='none';
   const sentEl=document.getElementById('resSentiment');if(sentEl)sentEl.style.display='none';
+  const extEl=document.getElementById('resExtHours');if(extEl)extEl.style.display='none';
+  const hintEl=document.getElementById('resSgtHint');if(hintEl)hintEl.style.display='none';
+  const earnEl=document.getElementById('resEarningsBanner');if(earnEl)earnEl.style.display='none';
   const loadEl=document.getElementById('screenerLoading');
   loadEl.classList.add('show');
   document.getElementById('loadingTicker').textContent=ticker;
@@ -1449,7 +1678,7 @@ async function runScreener(){
     const [res]=await Promise.all([fetch(`/api/screener/${ticker}`)]);
     const data=await res.json();
     if(data.error)throw new Error(data.error);
-    lastResult=data;
+    lastResult=data; window._lastResult=data;
     renderScreener(data);
     clearInterval(iv);
     await delay(800);
@@ -1566,6 +1795,8 @@ function applyPriceData(data){
     document.getElementById('resVolume').textContent=fmtVolume(data.volume);
     document.getElementById('resOhlcvRow').style.display='flex';
   }
+  // Extended hours block
+  if(data.pre_market||data.post_market) renderExtHours(data);
 }
 
 function renderScreener(d){
@@ -1617,6 +1848,8 @@ function renderScreener(d){
 }
 
 function renderFinancials(d){
+  // Earnings banner — needs both finData and last price data
+  if(window._lastResult) renderEarningsBanner(window._lastResult.ticker, d, window._lastResult);
   const card=document.getElementById('financialsCard');
   const body=document.getElementById('financialsBody');
   if(!d||d.error){
