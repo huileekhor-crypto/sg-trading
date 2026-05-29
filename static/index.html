@@ -93,6 +93,40 @@ body::after{content:'';position:fixed;inset:0;background:repeating-linear-gradie
 @keyframes priceFlash{0%{color:inherit;}40%{color:#ff9800;}100%{color:inherit;}}
 .price-flash{animation:priceFlash 1s ease;}
 
+/* ===== EARNINGS CALENDAR ===== */
+.cal-section{margin-bottom:24px;}
+.cal-section-title{font-family:'DM Mono',monospace;font-size:9px;color:var(--text-muted);letter-spacing:.14em;text-transform:uppercase;margin-bottom:12px;}
+.week-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-bottom:4px;}
+.week-day{background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:10px 9px;min-height:72px;}
+.week-day.today{border-color:var(--amber);background:rgba(255,179,0,.05);}
+.week-day.today .wd-day{color:var(--amber);}
+.wd-day{font-family:'DM Mono',monospace;font-size:10px;font-weight:700;color:var(--text);margin-bottom:2px;}
+.wd-date{font-family:'DM Mono',monospace;font-size:9px;color:var(--text-muted);margin-bottom:6px;}
+.wd-chip{font-family:'DM Mono',monospace;font-size:9px;padding:2px 5px;border-radius:4px;margin-bottom:3px;background:var(--bg4);border:1px solid var(--border2);display:flex;align-items:center;gap:3px;cursor:pointer;overflow:hidden;white-space:nowrap;}
+.wd-chip:hover{background:var(--bg5);}
+.wd-chip.in-wl{border-color:rgba(0,229,255,.4);color:var(--cyan);}
+.wd-hour{color:var(--text-muted);font-size:8px;margin-left:auto;}
+.earn-row{background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:12px 14px;margin-bottom:8px;display:flex;align-items:flex-start;gap:12px;transition:border-color .15s;}
+.earn-row:hover{border-color:var(--border2);}
+.earn-row.in-wl{border-color:rgba(0,229,255,.2);background:rgba(0,229,255,.02);}
+.earn-ticker{font-family:'DM Mono',monospace;font-size:15px;font-weight:700;line-height:1;}
+.earn-when{font-family:'DM Mono',monospace;font-size:9px;color:var(--text-muted);margin-top:4px;}
+.earn-details{flex:1;min-width:0;}
+.earn-dateline{font-family:'DM Mono',monospace;font-size:10px;color:var(--text-dim);margin-bottom:5px;}
+.earn-meta{display:flex;gap:10px;flex-wrap:wrap;align-items:center;}
+.earn-meta-item{font-family:'DM Mono',monospace;font-size:10px;color:var(--text-dim);}
+.earn-meta-item strong{color:var(--text);}
+.beat-badge{font-family:'DM Mono',monospace;font-size:9px;padding:2px 7px;border-radius:4px;display:inline-block;font-weight:600;}
+.beat-badge.green{background:rgba(0,230,118,.12);color:var(--green);border:1px solid rgba(0,230,118,.25);}
+.beat-badge.red{background:rgba(255,61,90,.12);color:var(--red);border:1px solid rgba(255,61,90,.25);}
+.beat-badge.amber{background:rgba(255,179,0,.12);color:var(--amber);border:1px solid rgba(255,179,0,.25);}
+.beat-badge.neutral{background:var(--bg4);color:var(--text-muted);border:1px solid var(--border);}
+.cal-empty{text-align:center;padding:40px;color:var(--text-muted);font-family:'DM Mono',monospace;font-size:11px;}
+/* Earnings warning banner */
+.earn-warn{background:rgba(255,140,0,.07);border:1px solid rgba(255,140,0,.28);border-radius:10px;padding:11px 15px;margin-bottom:10px;}
+.earn-warn-title{font-family:'DM Mono',monospace;font-size:11px;color:#FF8C00;font-weight:700;letter-spacing:.05em;margin-bottom:3px;}
+.earn-warn-body{font-size:12px;color:var(--text-dim);line-height:1.55;}
+
 /* Signal banner */
 .signal-banner{padding:14px 18px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:14px;}
 .signal-main{font-family:'DM Mono',monospace;font-size:16px;font-weight:700;letter-spacing:.05em;}
@@ -482,6 +516,8 @@ body::after{content:'';position:fixed;inset:0;background:repeating-linear-gradie
   </div>
 </div>
 
+<div id="earningsWarnContainer" style="display:none"></div>
+
 <div class="tabs">
   <button class="tab active" onclick="switchTab('screener')">⚡ Screener</button>
   <button class="tab" onclick="switchTab('watchlist')">👁 Watchlist</button>
@@ -491,6 +527,7 @@ body::after{content:'';position:fixed;inset:0;background:repeating-linear-gradie
   <button class="tab" onclick="switchTab('journal')">📓 Journal</button>
   <button class="tab" onclick="switchTab('alerts')" id="alertsTab">🔔 Alerts<span class="alert-badge" id="alertBadge" style="display:none"></span></button>
   <button class="tab" onclick="switchTab('breakout')">🚨 Breakout</button>
+  <button class="tab" onclick="switchTab('earnings')">📅 Calendar</button>
 </div>
 
 <!-- ===== SCREENER ===== -->
@@ -920,6 +957,42 @@ body::after{content:'';position:fixed;inset:0;background:repeating-linear-gradie
   <div id="brkResults"></div>
 </div>
 
+<!-- ===== EARNINGS CALENDAR ===== -->
+<div class="panel" id="panel-earnings">
+
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:8px">
+    <div>
+      <div style="font-family:'DM Mono',monospace;font-size:9px;color:var(--text-muted);letter-spacing:.14em;margin-bottom:3px">EARNINGS CALENDAR</div>
+      <div style="font-size:13px;color:var(--text-dim)">Next 30 days · Watchlist first</div>
+    </div>
+    <button class="btn btn-ghost" onclick="_calLoaded=false;loadEarningsCalendar()" style="padding:7px 14px;font-size:10px">↻ Refresh</button>
+  </div>
+
+  <div class="err" id="calError"></div>
+  <div class="loading" id="calLoading">
+    <div class="loading-ticker">📅</div>
+    <div class="loading-step active">Fetching earnings calendar...</div>
+    <div class="loading-step">Matching watchlist stocks...</div>
+    <div class="loading-step">Computing beat rates...</div>
+  </div>
+
+  <!-- Section 1: This Week -->
+  <div class="cal-section" id="calWeekSection" style="display:none">
+    <div class="cal-section-title">THIS WEEK</div>
+    <div class="week-grid" id="calWeekGrid"></div>
+  </div>
+
+  <!-- Section 2: Upcoming 30 days -->
+  <div class="cal-section" id="calListSection" style="display:none">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+      <div class="cal-section-title" style="margin-bottom:0">UPCOMING · NEXT 30 DAYS</div>
+      <div id="calTimestamp" style="font-family:'DM Mono',monospace;font-size:9px;color:var(--text-muted)"></div>
+    </div>
+    <div id="calList"></div>
+  </div>
+
+</div>
+
 <div class="disclaimer"><strong>Not financial advice.</strong> Educational purposes only. Always do your own analysis before trading.</div>
 </div>
 
@@ -950,13 +1023,14 @@ setInterval(updateClock,1000); updateClock();
 
 // ===== TABS =====
 function switchTab(tab){
-  const tabs=['screener','watchlist','scanner','scenarios','chart','journal','alerts','breakout'];
+  const tabs=['screener','watchlist','scanner','scenarios','chart','journal','alerts','breakout','earnings'];
   document.querySelectorAll('.tabs>.tab').forEach((t,i)=>t.classList.toggle('active',tabs[i]===tab));
   document.querySelectorAll('.panel').forEach(p=>p.classList.remove('active'));
   document.getElementById('panel-'+tab).classList.add('active');
   if(tab==='scenarios'&&!document.getElementById('scenariosContainer').innerHTML)loadScenarios();
   if(tab==='journal')loadJournal();
   if(tab==='alerts'){loadAlerts();ackAlerts();loadRecipients();}
+  if(tab==='earnings')loadEarningsCalendar();
 }
 
 // ===== WATCHLIST STATE (localStorage) =====
@@ -2640,6 +2714,139 @@ function renderWlResults(results) {
       }).join('')}
     </div>`;
 }
+
+// ===== EARNINGS CALENDAR =====
+let _calData   = null;
+let _calLoaded = false;
+
+async function loadEarningsCalendar(silent=false){
+  if(_calLoaded && _calData){renderEarnings(_calData);return;}
+  const loadEl = document.getElementById('calLoading');
+  const errEl  = document.getElementById('calError');
+  if(!silent){loadEl.classList.add('show');errEl.classList.remove('show');}
+  try{
+    const wlParam = encodeURIComponent(watchlist.join(','));
+    const res  = await fetch(`/api/earnings/calendar?watchlist=${wlParam}`);
+    const data = await res.json();
+    if(data.error) throw new Error(data.error);
+    _calData   = data;
+    _calLoaded = true;
+    renderEarnings(data);
+    renderEarningsWarning(data.events||[]);
+  }catch(e){
+    if(!silent){
+      errEl.textContent='⚠ '+friendlyError(e.message);
+      errEl.classList.add('show');
+    }
+  }finally{
+    if(!silent) loadEl.classList.remove('show');
+  }
+}
+
+function renderEarnings(data){
+  const events = data.events||[];
+  renderEarningsWeek(events);
+  renderEarningsList(events);
+  document.getElementById('calWeekSection').style.display='';
+  document.getElementById('calListSection').style.display='';
+  const ts=new Date(data.timestamp);
+  document.getElementById('calTimestamp').textContent=
+    `cached 6h · ${ts.toLocaleTimeString('en-SG',{hour:'2-digit',minute:'2-digit'})}`;
+}
+
+function renderEarningsWeek(events){
+  const grid = document.getElementById('calWeekGrid');
+  const today = new Date();
+  const todayStr = today.toISOString().split('T')[0];
+  const dow = today.getDay();
+  const monOffset = dow===0?-6:1-dow;
+  const weekDays=[];
+  for(let i=0;i<5;i++){
+    const d=new Date(today);
+    d.setDate(today.getDate()+monOffset+i);
+    const ds=d.toISOString().split('T')[0];
+    weekDays.push({
+      date:d, dateStr:ds,
+      dayName:d.toLocaleDateString('en-US',{weekday:'short'}).toUpperCase(),
+      label:d.toLocaleDateString('en-US',{month:'short',day:'numeric'}),
+      isToday:ds===todayStr
+    });
+  }
+  grid.innerHTML=weekDays.map(day=>{
+    const dayEvts=events.filter(e=>e.date===day.dateStr);
+    return`<div class="week-day${day.isToday?' today':''}">
+      <div class="wd-day">${day.dayName}</div>
+      <div class="wd-date">${day.label}</div>
+      ${dayEvts.length===0
+        ?'<div style="font-family:\'DM Mono\',monospace;font-size:9px;color:var(--text-muted)">—</div>'
+        :dayEvts.map(e=>`<div class="wd-chip${e.in_watchlist?' in-wl':''}" onclick="analyseAndChart('${e.ticker}')">
+          ${e.in_watchlist?'⭐ ':''}<span>${e.ticker}</span><span class="wd-hour">${e.hour}</span>
+        </div>`).join('')
+      }
+    </div>`;
+  }).join('');
+}
+
+function _fmtRev(v){
+  if(v===null||v===undefined)return null;
+  if(v>=1e12)return`$${(v/1e12).toFixed(1)}T`;
+  if(v>=1e9) return`$${(v/1e9).toFixed(1)}B`;
+  if(v>=1e6) return`$${(v/1e6).toFixed(1)}M`;
+  return`$${v}`;
+}
+
+function renderEarningsList(events){
+  const el=document.getElementById('calList');
+  if(!events.length){
+    el.innerHTML='<div class="cal-empty">No upcoming earnings found for tracked stocks in the next 30 days.<br>Add tickers to your watchlist to see their earnings here.</div>';
+    return;
+  }
+  el.innerHTML=events.map(e=>{
+    const starEl=e.in_watchlist?'<span style="color:var(--cyan);margin-right:1px">⭐</span>':'';
+    const daysCol=e.days_until===0?'var(--amber)':e.days_until<=2?'var(--red)':'var(--text)';
+    const daysLbl=e.days_until===0?'TODAY':e.days_until===1?'TOMORROW':`In ${e.days_until}d`;
+    const beatEl=e.beat_rate!==null
+      ?`<span class="beat-badge ${e.beat_color}">${e.beat_rate}% beats (${e.beat_count}q)</span>`:'';
+    const epsEst=e.eps_estimate!==null
+      ?`<div class="earn-meta-item">EPS Est: <strong>$${e.eps_estimate}</strong>${e.eps_prev!==null?` · Prev: $${e.eps_prev}`:''}</div>`:'';
+    const revEst=_fmtRev(e.rev_estimate)
+      ?`<div class="earn-meta-item">Rev Est: <strong>${_fmtRev(e.rev_estimate)}</strong></div>`:'';
+    return`<div class="earn-row${e.in_watchlist?' in-wl':''}">
+      <div style="min-width:62px">
+        <div class="earn-ticker">${starEl}${e.ticker}</div>
+        <div class="earn-when">${e.hour}</div>
+      </div>
+      <div class="earn-details">
+        <div class="earn-dateline">${e.date} · <strong style="color:${daysCol}">${daysLbl}</strong></div>
+        <div class="earn-meta">
+          ${epsEst}${revEst}${beatEl}
+        </div>
+      </div>
+      <div style="flex-shrink:0">
+        <button class="btn btn-ghost" style="padding:6px 10px;font-size:10px;white-space:nowrap" onclick="analyseAndChart('${e.ticker}')">📊 Analyse</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function renderEarningsWarning(events){
+  const container=document.getElementById('earningsWarnContainer');
+  const urgent=events.filter(e=>e.in_watchlist&&e.days_until<=2);
+  if(!urgent.length){container.style.display='none';container.innerHTML='';return;}
+  container.innerHTML=urgent.map(e=>`
+    <div class="earn-warn">
+      <div class="earn-warn-title">⚠ ${e.ticker} reports ${e.when_label}</div>
+      <div class="earn-warn-body">${
+        e.eps_estimate!==null?`EPS Estimate: $${e.eps_estimate} · `:''
+      }${
+        e.beat_rate!==null?`Historical beat rate: ${e.beat_rate}% (${e.beat_count} quarters) · `:''
+      }Consider reducing position size before earnings.</div>
+    </div>`).join('');
+  container.style.display='';
+}
+
+// Silently load earnings warnings 3s after page load
+setTimeout(()=>loadEarningsCalendar(true), 3000);
 
 // ===== BREAKOUT SCANNER =====
 let _brkTimer = null;
