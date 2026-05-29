@@ -3,6 +3,7 @@ import yfinance as yf
 from config import Config
 from datetime import datetime, timedelta
 from utils.dc_patterns import dc_pattern_score
+from utils.trump_cache import get_portfolio_tickers, get_mention_tickers_today
 
 breakout_bp = Blueprint('breakout', __name__)
 _breakout_cache = {}
@@ -12,11 +13,19 @@ CACHE_TTL     = 1800   # 30 min for scores
 CANDLE_TTL    = 1800   # 30 min for price data
 CATALYST_TTL  = 86400  # 24 h for earnings dates
 
-# Trump Q1 2026 OGE Form 278-T public disclosure — buy positions
-TRUMP_BUYS = {
-    'NVDA','AVGO','ORCL','NOW','ADBE','MSFT','AMZN',
-    'TXN','DELL','MSI','AAPL','PLTR','WDAY','NFLX','CMCSA',
-}
+# Trump portfolio — loaded live from trumpstocktracker.com; fallback to hardcoded
+def _trump_portfolio():
+    try:
+        return get_portfolio_tickers()
+    except Exception:
+        return {'NVDA','AVGO','ORCL','NOW','ADBE','MSFT','AMZN',
+                'TXN','DELL','MSI','AAPL','PLTR','WDAY','NFLX','CMCSA'}
+
+def _trump_mentions():
+    try:
+        return get_mention_tickers_today()
+    except Exception:
+        return set()
 
 TOP_MOMENTUM_STOCKS = [
     'NVDA', 'MSFT', 'META', 'GOOGL', 'AMZN', 'AAPL', 'TSM', 'AVGO',
@@ -46,7 +55,7 @@ SECTOR_MAP = {
     # Energy → XLE
     'XOM':'XLE','CVX':'XLE','SLB':'XLE','COP':'XLE',
 }
-MAX_RAW = 165  # 15+15+10+10+25+20+20+20+15+15
+MAX_RAW = 165  # base: 15+15+10+10+25+20+20+20+15+15 (+10 portfolio +20 mention on top)
 
 
 def _get_candles(ticker, days=260):
@@ -304,10 +313,15 @@ def _score_ticker(ticker, is_bull=True):
     sigs.append({'name':'Catalyst Window','score':cat_score,'max':15,
                  'pass':cat_score>=8,'explanation':cat_ex})
 
-    # ── 11. Trump Portfolio Bonus (0-10) ──────────────────────────────────
-    if ticker in TRUMP_BUYS:
+    # ── 11. Trump Bonuses ──────────────────────────────────────────────────────
+    trump_holds   = ticker in _trump_portfolio()
+    trump_mention = ticker in _trump_mentions()
+    if trump_holds:
         sigs.append({'name':'🏛 Trump Portfolio','score':10,'max':10,'pass':True,
                      'explanation':'Trump Q1 2026 OGE 278-T — active buy position disclosed'})
+    if trump_mention:
+        sigs.append({'name':'🔴 Trump Mentioned Today','score':20,'max':20,'pass':True,
+                     'explanation':'Trump publicly mentioned this ticker today — retail flood typically follows within hours'})
 
     # ── Danny Cheng Pattern Score ──────────────────────────────────────────
     try:
@@ -319,7 +333,7 @@ def _score_ticker(ticker, is_bull=True):
 
     # ── Normalise + Regime Multiplier ─────────────────────────────────────
     raw_total  = sum(sg['score'] for sg in sigs)
-    max_raw    = MAX_RAW + (10 if ticker in TRUMP_BUYS else 0)
+    max_raw    = MAX_RAW + (10 if trump_holds else 0) + (20 if trump_mention else 0)
     regime_m   = 1.0 if is_bull else 0.65
     tech_norm  = min(100, round((raw_total / max_raw) * 100 * regime_m))
 
@@ -361,7 +375,8 @@ def _score_ticker(ticker, is_bull=True):
         'pct_from_high':  pct_from_high,
         'market_regime':  'BULL' if is_bull else 'BEAR',
         'regime_mult':    regime_m,
-        'trump_holding':  ticker in TRUMP_BUYS,
+        'trump_holding':  trump_holds,
+        'trump_mentioned': trump_mention,
         'signal_details': sigs,
         'signals':        [sg['name'] for sg in sigs if sg['pass']],  # compat
         'score_breakdown': {                                            # compat

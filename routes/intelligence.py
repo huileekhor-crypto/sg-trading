@@ -4,6 +4,11 @@ import json
 import re
 from datetime import datetime
 from config import Config
+from utils.trump_cache import (
+    get_portfolio, get_portfolio_tickers,
+    get_mentions, get_mention_tickers_today,
+    FALLBACK_PORTFOLIO,
+)
 
 intelligence_bp = Blueprint('intelligence', __name__)
 _scan_cache = {}
@@ -305,27 +310,7 @@ def run_intelligence_scan():
 
 
 # ── Trump Portfolio ───────────────────────────────────────────────────────────
-
-TRUMP_PORTFOLIO = {
-    # Bought — Q1 2026 OGE Form 278-T public disclosure
-    'NVDA': {'action':'buy','size':'large'},
-    'AVGO': {'action':'buy','size':'large'},
-    'ORCL': {'action':'buy','size':'large'},
-    'NOW':  {'action':'buy','size':'large'},
-    'ADBE': {'action':'buy','size':'large'},
-    'MSFT': {'action':'buy','size':'large'},
-    'AMZN': {'action':'buy','size':'large'},
-    'TXN':  {'action':'buy','size':'large'},
-    'DELL': {'action':'buy','size':'large'},
-    'MSI':  {'action':'buy','size':'large'},
-    'AAPL': {'action':'buy','size':'large'},
-    'PLTR': {'action':'buy','size':'large'},
-    'WDAY': {'action':'buy','size':'large'},
-    'NFLX': {'action':'buy','size':'medium'},
-    'CMCSA':{'action':'buy','size':'medium'},
-    # Sold — Q1 2026
-    'META': {'action':'sell','size':'large'},
-}
+# Live data via utils/trump_cache; FALLBACK_PORTFOLIO used when fetch fails
 
 _trump_prices_cache = {}   # permanent — historical ref prices never change
 _trump_alerts_cache = {}   # 30 min TTL
@@ -386,38 +371,90 @@ def get_latest():
 @intelligence_bp.route('/trump/portfolio', methods=['GET'])
 def trump_portfolio():
     from utils.price_fetcher import get_live_price
-    now     = datetime.now()
+    now      = datetime.now()
+    port     = get_portfolio()
+    holdings = port.get('holdings', [])
+
     results = []
-    for ticker, info in TRUMP_PORTFOLIO.items():
+    for h in holdings:
+        ticker = h.get('ticker', '').upper()
+        action = h.get('action', 'buy')
+        size   = h.get('size', 'medium')
         try:
-            live      = get_live_price(ticker)
-            current   = live.get('price', 0)
-            ref       = _trump_ref_price(ticker)
-            pct_q1    = round(((current - ref) / ref) * 100, 1) if ref else None
+            live    = get_live_price(ticker)
+            current = live.get('price', 0)
+            ref     = _trump_ref_price(ticker)
+            pct_q1  = round(((current - ref) / ref) * 100, 1) if ref else None
             results.append({
                 'ticker':       ticker,
-                'action':       info['action'],
-                'size':         info['size'],
+                'company':      h.get('company', ticker),
+                'action':       action,
+                'size':         size,
+                'value_range':  h.get('value_range', ''),
+                'date':         h.get('date', 'Q1 2026'),
                 'price':        current,
                 'change_pct':   live.get('change_pct', 0),
                 'ref_price':    ref,
                 'since_q1_pct': pct_q1,
-                'trump_holding': info['action'] == 'buy',
+                'trump_holding': action == 'buy',
             })
         except Exception:
-            results.append({'ticker': ticker, 'action': info['action'],
-                            'size': info['size'], 'price': 0})
+            results.append({'ticker': ticker, 'company': h.get('company', ticker),
+                            'action': action, 'size': size, 'price': 0})
 
-    buys  = sorted([r for r in results if r['action']=='buy'],
+    buys  = sorted([r for r in results if r['action'] == 'buy'],
                    key=lambda x: x.get('since_q1_pct') or 0, reverse=True)
-    sells = [r for r in results if r['action']=='sell']
+    sells = [r for r in results if r['action'] == 'sell']
 
     return jsonify({
-        'buys':      buys,
-        'sells':     sells,
-        'source':    'OGE Form 278-T — Q1 2026 public disclosure',
-        'disclaimer':'Trump accounts managed by third-party institutions. Public data only. Not financial advice.',
-        'timestamp': now.isoformat(),
+        'buys':             buys,
+        'sells':            sells,
+        'last_updated':     port.get('last_updated', 'Q1 2026'),
+        'total_transactions': port.get('total_transactions', 3848),
+        'source':           port.get('source', 'fallback'),
+        'disclaimer':       'Trump accounts managed by third-party institutions. Public data only. Not financial advice.',
+        'timestamp':        now.isoformat(),
+    })
+
+
+@intelligence_bp.route('/trump/mentions', methods=['GET'])
+def trump_mentions():
+    """Live Trump stock mentions from trumptrack.app — cached 30 minutes."""
+    mentions_data = get_mentions()
+    mentions      = mentions_data.get('mentions', [])
+
+    # Enrich each mention with current breakout score
+    enriched = []
+    try:
+        from routes.breakout import _score_ticker, _get_market_regime
+        from utils.price_fetcher import get_live_price
+        is_bull, _, _ = _get_market_regime()
+        for m in mentions:
+            ticker = m.get('ticker', '').upper()
+            entry  = dict(m)
+            entry['ticker'] = ticker
+            try:
+                brk = _score_ticker(ticker, is_bull)
+                entry['breakout_score'] = brk['score'] if brk else None
+                entry['alert_level']    = brk['alert_level'] if brk else None
+                entry['entry']          = brk['entry'] if brk else None
+                entry['stop']           = brk['stop']  if brk else None
+                entry['target']         = brk['target']if brk else None
+                live = get_live_price(ticker)
+                entry['price']          = live.get('price', 0)
+                entry['change_pct']     = live.get('change_pct', 0)
+            except Exception:
+                pass
+            enriched.append(entry)
+    except Exception:
+        enriched = mentions
+
+    return jsonify({
+        'mentions':     enriched,
+        'tone_today':   mentions_data.get('tone_today', ''),
+        'last_updated': mentions_data.get('last_updated', ''),
+        'source':       mentions_data.get('source', 'unavailable'),
+        'timestamp':    datetime.now().isoformat(),
     })
 
 
@@ -431,13 +468,18 @@ def trump_alerts():
     try:
         from routes.breakout import _score_ticker, _get_market_regime
         is_bull, _, _ = _get_market_regime()
-        buy_tickers   = [t for t, v in TRUMP_PORTFOLIO.items() if v['action'] == 'buy']
+
+        buy_tickers    = list(get_portfolio_tickers())
+        mention_tickers = list(get_mention_tickers_today())
+        all_tickers    = list(set(buy_tickers + mention_tickers))
 
         alerts = []
-        for ticker in buy_tickers:
+        for ticker in all_tickers:
             try:
                 r = _score_ticker(ticker, is_bull)
                 if r and r['score'] >= 65:
+                    r['trump_holding']  = ticker in buy_tickers
+                    r['trump_mentioned'] = ticker in mention_tickers
                     alerts.append(r)
             except Exception:
                 pass

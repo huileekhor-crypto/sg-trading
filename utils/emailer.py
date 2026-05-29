@@ -203,6 +203,65 @@ def send_intelligence_email(setups, recipients):
     return ok, errors
 
 
+def send_trump_mention_alert(mention, breakout, recipients):
+    """Urgent email when Trump publicly mentions a stock ticker."""
+    ticker  = mention.get('ticker', '?')
+    context = mention.get('context', 'Public statement')
+    source  = mention.get('source', 'News')
+    price   = breakout.get('price', '—') if breakout else '—'
+    score   = breakout.get('score', '—') if breakout else '—'
+    entry   = breakout.get('entry', '—') if breakout else '—'
+    stop    = breakout.get('stop',  '—') if breakout else '—'
+    target  = breakout.get('target','—') if breakout else '—'
+
+    html = f"""<!DOCTYPE html><html><head><meta charset="UTF-8"></head>
+<body style="margin:0;padding:0;background:#08090C;font-family:Arial,sans-serif">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#08090C;padding:24px 0">
+<tr><td align="center">
+<table width="560" cellpadding="0" cellspacing="0" style="background:#0D0F14;border:1px solid #FF3D30;border-radius:12px;overflow:hidden;max-width:560px">
+  <tr><td style="background:linear-gradient(90deg,#FF3D30,#FF8C00);padding:4px 0"></td></tr>
+  <tr><td style="padding:24px 28px;border-bottom:1px solid #1F2535">
+    <div style="font-family:'Courier New',monospace;font-size:10px;color:#FF3D30;letter-spacing:2px;margin-bottom:6px">🔴 TRUMP MENTION ALERT</div>
+    <div style="font-size:32px;font-weight:700;color:#C8D8F0;letter-spacing:-0.02em">${ticker}</div>
+    <div style="font-size:13px;color:#FF8C00;margin-top:6px">Source: {source}</div>
+  </td></tr>
+  <tr><td style="padding:20px 28px;border-bottom:1px solid #1F2535">
+    <div style="font-family:'Courier New',monospace;font-size:10px;color:#5A6E88;letter-spacing:1.5px;margin-bottom:8px">WHAT HE SAID</div>
+    <div style="font-size:14px;color:#C8D8F0;font-style:italic;line-height:1.6">"{context}"</div>
+  </td></tr>
+  <tr><td style="padding:20px 28px;border-bottom:1px solid #1F2535">
+    <div style="font-family:'Courier New',monospace;font-size:10px;color:#5A6E88;letter-spacing:1.5px;margin-bottom:12px">OUR ANALYSIS</div>
+    <table width="100%" cellpadding="0" cellspacing="0">
+      <tr><td style="padding:5px 0;font-family:'Courier New',monospace;font-size:11px;color:#8898B8">Current Price</td>
+          <td align="right" style="font-family:'Courier New',monospace;font-size:13px;font-weight:700;color:#C8D8F0">${price}</td></tr>
+      <tr><td style="padding:5px 0;font-family:'Courier New',monospace;font-size:11px;color:#8898B8">Breakout Score</td>
+          <td align="right" style="font-family:'Courier New',monospace;font-size:13px;font-weight:700;color:#FFB300">{score}/100</td></tr>
+      <tr><td style="padding:5px 0;font-family:'Courier New',monospace;font-size:11px;color:#448AFF">Entry Zone</td>
+          <td align="right" style="font-family:'Courier New',monospace;font-size:13px;font-weight:700;color:#448AFF">{entry}</td></tr>
+      <tr><td style="padding:5px 0;font-family:'Courier New',monospace;font-size:11px;color:#FF3D5A">Stop Loss</td>
+          <td align="right" style="font-family:'Courier New',monospace;font-size:13px;font-weight:700;color:#FF3D5A">{stop}</td></tr>
+      <tr><td style="padding:5px 0;font-family:'Courier New',monospace;font-size:11px;color:#00E676">Target</td>
+          <td align="right" style="font-family:'Courier New',monospace;font-size:13px;font-weight:700;color:#00E676">{target}</td></tr>
+    </table>
+  </td></tr>
+  <tr><td style="padding:16px 28px;background:#0A0C11;border-top:1px solid #1F2535">
+    <div style="font-size:12px;color:#8898B8;line-height:1.6">⚡ <strong style="color:#FF8C00">Act fast</strong> — retail investors typically follow within hours of a Trump mention.</div>
+  </td></tr>
+  <tr><td style="padding:16px 28px;text-align:center">
+    <a href="{APP_URL}/dashboard" style="display:inline-block;background:#FF3D30;color:#fff;font-family:'Courier New',monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;text-decoration:none;padding:10px 28px;border-radius:8px">VIEW DASHBOARD →</a>
+  </td></tr>
+  <tr><td style="padding:12px 28px;text-align:center"><div style="font-size:10px;color:#5A6E88">Not financial advice · SG Trading Dashboard</div></td></tr>
+</table></td></tr></table></body></html>"""
+
+    subject = f"\U0001f534 URGENT: Trump mentioned ${ticker} — Score {score}/100"
+    ok, errors = 0, []
+    for r in recipients:
+        success, err = _send_one(subject, html, r['email'], r.get('name'))
+        if success: ok += 1
+        else: errors.append(f"{r['email']}: {err}")
+    return ok, errors
+
+
 def send_test_email(to_email, to_name=None):
     """Send a configuration test email. Returns (success, error_or_None)."""
     return _send_one(

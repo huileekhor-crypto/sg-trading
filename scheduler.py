@@ -98,6 +98,41 @@ def run_intelligence_scan():
         logger.error(f"❌ Intelligence scan failed: {e}")
 
 
+def check_trump_mentions():
+    """Every 2 hours: fetch latest Trump mentions → breakout scan → urgent email if score > 60."""
+    logger.info(f"🔴 Trump mention check started at {datetime.now().isoformat()}")
+    try:
+        from utils.trump_cache import get_mentions, get_new_mentions
+        get_mentions()                          # refresh cache (30-min TTL auto-handled)
+        new_tickers = get_new_mentions()        # only newly appeared tickers
+        if not new_tickers:
+            logger.info("🔴 Trump mentions: no new tickers since last check")
+            return
+
+        from routes.breakout import _score_ticker, _get_market_regime
+        from utils.trump_cache import get_mentions as _gm
+        from models.alerts import get_active_recipients
+        from utils.emailer import send_trump_mention_alert
+
+        is_bull, _, _ = _get_market_regime()
+        mentions_data = _gm()
+        mention_map   = {m['ticker'].upper(): m for m in mentions_data.get('mentions', [])}
+        recipients    = get_active_recipients()
+
+        for ticker in new_tickers:
+            logger.info(f"🔴 New Trump mention: {ticker}")
+            try:
+                brk = _score_ticker(ticker, is_bull)
+                if brk and brk['score'] >= 60 and recipients:
+                    mention = mention_map.get(ticker, {'ticker': ticker, 'context': '', 'source': 'News'})
+                    send_trump_mention_alert(mention, brk, recipients)
+                    logger.info(f"📧 Trump mention email sent for {ticker} (score {brk['score']})")
+            except Exception as e:
+                logger.warning(f"⚠ Trump mention scan failed for {ticker}: {e}")
+    except Exception as e:
+        logger.error(f"❌ Trump mention check failed: {e}")
+
+
 def start_scheduler():
     """Start the background scheduler"""
     # Run every day at 10:00 UTC = 6:00pm SGT
@@ -123,6 +158,14 @@ def start_scheduler():
         IntervalTrigger(minutes=5),
         id='price_alerts',
         name='Price Alert Check (every 5 min)',
+        replace_existing=True
+    )
+
+    scheduler.add_job(
+        check_trump_mentions,
+        IntervalTrigger(hours=2),
+        id='trump_mentions',
+        name='Trump Mention Check (every 2 hours)',
         replace_existing=True
     )
 

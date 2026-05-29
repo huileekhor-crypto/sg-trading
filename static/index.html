@@ -1914,7 +1914,15 @@ function renderScreener(d){
   document.getElementById('resTarget').textContent=d.target;
   document.getElementById('resTargetNote').textContent=d.target_note;
   const trumpEl=document.getElementById('resTrumpBadge');
-  if(trumpEl)trumpEl.style.display=TRUMP_BUYS.has(d.ticker)?'':'none';
+  if(trumpEl){
+    const holds   = TRUMP_BUYS.has(d.ticker);
+    const mentioned = _trumpMentions.has(d.ticker);
+    trumpEl.style.display = (holds||mentioned) ? '' : 'none';
+    trumpEl.innerHTML = [
+      mentioned ? '<span class="trump-badge" style="background:rgba(255,61,48,.15);color:#FF3D30;border-color:rgba(255,61,48,.35)">🔴 Mentioned today</span>' : '',
+      holds     ? '<span class="trump-badge">🏛 Portfolio holding</span>' : '',
+    ].filter(Boolean).join(' ');
+  }
   document.getElementById('resultCard').classList.add('show');
   startPriceRefresh(d.ticker);
   loadSentiment(d.ticker);
@@ -3861,11 +3869,10 @@ function renderEarningsWarning(events){
 // Silently load earnings warnings 3s after page load
 setTimeout(()=>loadEarningsCalendar(true), 3000);
 
-// ===== TRUMP PORTFOLIO =====
-const TRUMP_BUYS = new Set([
-  'NVDA','AVGO','ORCL','NOW','ADBE','MSFT','AMZN',
-  'TXN','DELL','MSI','AAPL','PLTR','WDAY','NFLX','CMCSA',
-]);
+// ===== TRUMP TRACKER =====
+// Live tickers loaded from /api/trump/portfolio and /api/trump/mentions
+let TRUMP_BUYS     = new Set(['NVDA','AVGO','ORCL','NOW','ADBE','MSFT','AMZN','TXN','DELL','MSI','AAPL','PLTR','WDAY','NFLX','CMCSA']);
+let _trumpMentions = new Set(); // tickers mentioned TODAY — for screener badge
 
 function loadTrumpWatchlist(){
   const tickers=[...TRUMP_BUYS];
@@ -3877,84 +3884,133 @@ async function loadTrumpAlerts(force=false){
   const el=document.getElementById('intelTrumpAlerts');
   const pel=document.getElementById('intelTrumpPortfolio');
   if(!el)return;
-  el.innerHTML='<div style="font-family:\'DM Mono\',monospace;font-size:10px;color:var(--text-muted)">Scanning Trump holdings for breakout signals…</div>';
+  el.innerHTML='<div style="font-family:\'DM Mono\',monospace;font-size:10px;color:var(--text-muted)">Loading Trump Tracker data…</div>';
   try{
-    const[alertRes,portRes]=await Promise.all([
+    const[alertRes,portRes,mentionRes]=await Promise.all([
       fetch('/api/trump/alerts'),
       fetch('/api/trump/portfolio'),
+      fetch('/api/trump/mentions'),
     ]);
-    const[alertData,portData]=await Promise.all([alertRes.json(),portRes.json()]);
-    renderTrumpAlerts(alertData,el);
-    if(pel)renderTrumpPortfolio(portData,pel);
+    const[alertData,portData,mentionData]=await Promise.all([
+      alertRes.json(), portRes.json(), mentionRes.json()
+    ]);
+    // Update live sets for screener badges
+    if(portData.buys) TRUMP_BUYS = new Set(portData.buys.map(r=>r.ticker));
+    if(mentionData.mentions) _trumpMentions = new Set(mentionData.mentions.map(m=>m.ticker));
+    renderTrumpTracker(alertData, portData, mentionData, el, pel);
   }catch(e){
-    el.innerHTML='<div style="font-size:11px;color:var(--text-muted)">Trump alerts unavailable</div>';
+    el.innerHTML='<div style="font-size:11px;color:var(--text-muted)">Trump Tracker unavailable</div>';
   }
 }
 
-function renderTrumpAlerts(data,el){
-  const alerts=data.alerts||[];
-  if(!alerts.length){
-    el.innerHTML='<div style="font-family:\'DM Mono\',monospace;font-size:11px;color:var(--text-muted)">No Trump holdings currently at breakout score ≥ 65.</div>';
-    return;
-  }
-  el.innerHTML=`<div style="display:flex;flex-direction:column;gap:8px">`+
-    alerts.map((r,i)=>{
-      const rc=r.alert_level==='IMMINENT'?'STRONG':r.alert_level==='WATCH'?'BUY':'WATCH';
-      const chg=r.price_change||0;
-      return`<div class="intel-card ${rc}" style="animation-delay:${i*.06}s">
-        <div class="intel-card-top">
-          <div class="intel-ring ${rc}">
-            <div class="intel-ring-score">${r.score}</div>
-            <div class="intel-ring-label">${rc==='STRONG'?'S.BUY':rc}</div>
+function renderTrumpTracker(alertData, portData, mentionData, el, pel){
+  const alerts   = alertData.alerts || [];
+  const buys     = portData.buys    || [];
+  const sells    = portData.sells   || [];
+  const mentions = mentionData.mentions  || [];
+  const tone     = mentionData.tone_today || '';
+  const lastUpd  = mentionData.last_updated || '';
+  const portSrc  = portData.source === 'live' ? 'Live — trumpstocktracker.com' : 'OGE Form 278-T (fallback)';
+  const DISCLAIMER = portData.disclaimer || '';
+
+  // ── Mentions section ──────────────────────────────────────────────────
+  const mentionHTML = mentions.length ? mentions.map(m=>{
+    const up = (m.change_pct||0) >= 0;
+    const scoreColor = m.breakout_score >= 65 ? 'var(--green)' : m.breakout_score >= 45 ? 'var(--amber)' : 'var(--text-muted)';
+    return `<div style="background:rgba(255,61,48,.06);border:1px solid rgba(255,61,48,.25);border-radius:8px;padding:12px 14px;margin-bottom:8px">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap">
+        <span style="font-family:'DM Mono',monospace;font-size:14px;font-weight:700;color:var(--text)">${m.ticker}</span>
+        <span style="font-family:'DM Mono',monospace;font-size:9px;padding:2px 7px;background:rgba(255,61,48,.15);color:#FF3D30;border-radius:4px;border:1px solid rgba(255,61,48,.3)">🔴 MENTIONED</span>
+        <span style="font-family:'DM Mono',monospace;font-size:9px;color:var(--text-muted)">${m.source||''} · ${m.date||'today'}</span>
+        ${m.breakout_score?`<span style="font-family:'DM Mono',monospace;font-size:10px;font-weight:600;color:${scoreColor}">Score ${m.breakout_score}/100</span>`:''}
+      </div>
+      <div style="font-size:12px;color:var(--text-dim);font-style:italic;margin-bottom:6px">"${m.context||''}"</div>
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+        ${m.price?`<span style="font-family:'DM Mono',monospace;font-size:11px;color:var(--text-dim)">$${m.price} <span class="${up?'price-chg up':'price-chg down'}">${up?'+':''}${(m.change_pct||0).toFixed(2)}%</span></span>`:''}
+        <button class="btn btn-primary" style="font-size:9px;padding:4px 10px" onclick="analyseAndChart('${m.ticker}')">📊 Analyse</button>
+        <button class="btn btn-ghost" style="font-size:9px;padding:4px 8px" onclick="addTicker('${m.ticker}');showToast('${m.ticker} added')">+ WL</button>
+      </div>
+    </div>`;
+  }).join('') : '<div style="font-family:\'DM Mono\',monospace;font-size:10px;color:var(--text-muted)">No stock mentions detected today — check back later.</div>';
+
+  // ── High-conviction alerts (portfolio + mention) ───────────────────────
+  const alertHTML = alerts.length ? alerts.slice(0,5).map((r,i)=>{
+    const rc  = r.alert_level==='IMMINENT'?'STRONG':r.alert_level==='WATCH'?'BUY':'WATCH';
+    const chg = r.price_change||0;
+    const holdBadge    = r.trump_holding   ? '<span class="trump-badge">🏛 Portfolio</span>' : '';
+    const mentionBadge = r.trump_mentioned ? '<span style="font-family:\'DM Mono\',monospace;font-size:9px;padding:2px 7px;background:rgba(255,61,48,.15);color:#FF3D30;border-radius:4px;border:1px solid rgba(255,61,48,.3)">🔴 Mentioned</span>' : '';
+    return `<div class="intel-card ${rc}" style="animation-delay:${i*.06}s">
+      <div class="intel-card-top">
+        <div class="intel-ring ${rc}"><div class="intel-ring-score">${r.score}</div><div class="intel-ring-label">${rc==='STRONG'?'S.BUY':rc}</div></div>
+        <div class="intel-info">
+          <div class="intel-ticker-row">
+            <span class="intel-ticker">${r.ticker}</span>
+            ${holdBadge}${mentionBadge}
+            <span class="intel-badge ${rc}">${r.alert_emoji||''} ${r.alert_label||''}</span>
           </div>
-          <div class="intel-info">
-            <div class="intel-ticker-row">
-              <span class="intel-ticker">${r.ticker}</span>
-              <span class="trump-badge">🏛 Trump</span>
-              <span class="intel-badge ${rc}">${r.alert_emoji} ${r.alert_label}</span>
-            </div>
-            <div style="font-family:'DM Mono',monospace;font-size:11px;color:var(--text-dim);margin-top:4px">
-              $${r.price} <span class="${chg>=0?'price-chg up':'price-chg down'}">${chg>=0?'+':''}${chg}%</span>
-            </div>
-            <div style="font-size:11px;color:var(--text-muted);margin-top:4px;font-style:italic">${(r.why||'').split('|')[0].trim()}</div>
+          <div style="font-family:'DM Mono',monospace;font-size:11px;color:var(--text-dim);margin-top:4px">
+            $${r.price} <span class="${chg>=0?'price-chg up':'price-chg down'}">${chg>=0?'+':''}${chg}%</span>
           </div>
+          <div style="font-size:11px;color:var(--text-muted);margin-top:4px;font-style:italic">${(r.why||'').split('|')[0].trim()}</div>
         </div>
-        <div style="padding:6px 18px 10px;display:flex;gap:6px">
-          <button class="btn btn-primary" style="flex:1;font-size:10px;padding:7px" onclick="analyseAndChart('${r.ticker}')">📊 Analyse</button>
-          <button class="btn btn-ghost" style="font-size:10px;padding:7px 12px" onclick="addTicker('${r.ticker}');showToast('${r.ticker} added')">+ WL</button>
+      </div>
+      <div style="padding:6px 18px 10px;display:flex;gap:6px">
+        <button class="btn btn-primary" style="flex:1;font-size:10px;padding:7px" onclick="analyseAndChart('${r.ticker}')">📊 Analyse</button>
+        <button class="btn btn-ghost" style="font-size:10px;padding:7px 12px" onclick="addTicker('${r.ticker}');showToast('${r.ticker} added')">+ WL</button>
+      </div>
+    </div>`;
+  }).join('') : '<div style="font-family:\'DM Mono\',monospace;font-size:11px;color:var(--text-muted)">No holdings or mentions currently at score ≥ 65.</div>';
+
+  el.innerHTML = `
+    <!-- Header bar -->
+    <div style="background:rgba(255,140,0,.08);border:1px solid rgba(255,140,0,.25);border-radius:10px;padding:12px 16px;margin-bottom:12px">
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px">
+        <div style="font-family:'DM Mono',monospace;font-size:10px;font-weight:700;color:#FF8C00;letter-spacing:.14em">🇺🇸 TRUMP TRACKER · LIVE</div>
+        ${lastUpd?`<div style="font-family:'DM Mono',monospace;font-size:9px;color:var(--text-muted)">Updated ${lastUpd}</div>`:''}
+      </div>
+      ${tone?`<div style="font-size:12px;color:var(--text-dim);margin-top:6px;font-style:italic">${tone}</div>`:''}
+    </div>
+
+    <!-- Mentions today -->
+    <div style="font-family:'DM Mono',monospace;font-size:9px;color:#FF3D30;letter-spacing:.14em;margin-bottom:8px">🔴 MENTIONED TODAY <span style="color:var(--text-muted);font-size:8px">(+20 pts to breakout score)</span></div>
+    <div style="margin-bottom:16px">${mentionHTML}</div>
+
+    <!-- High conviction setups -->
+    <div style="font-family:'DM Mono',monospace;font-size:9px;color:var(--amber);letter-spacing:.14em;margin-bottom:8px">⚡ HIGH-CONVICTION SETUPS (score ≥ 65)</div>
+    <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:16px">${alertHTML}</div>`;
+
+  // Portfolio section
+  if(pel){
+    const portRows = buys.map(r=>{
+      const q1=r.since_q1_pct, chg=r.change_pct||0;
+      return `<div class="trump-row" onclick="document.getElementById('tickerInput').value='${r.ticker}';switchTab('screener');runScreener()" style="cursor:pointer">
+        <div style="display:flex;align-items:center;gap:8px">
+          <span style="font-family:'DM Mono',monospace;font-size:13px;font-weight:700;color:var(--text)">${r.ticker}</span>
+          <span style="font-family:'DM Mono',monospace;font-size:9px;color:var(--text-muted)">${r.size||''}</span>
+          ${_trumpMentions.has(r.ticker)?'<span style="font-family:\'DM Mono\',monospace;font-size:8px;color:#FF3D30">🔴</span>':''}
+        </div>
+        <div style="display:flex;align-items:center;gap:10px">
+          <span style="font-family:'DM Mono',monospace;font-size:11px;color:var(--text-dim)">$${r.price||'—'}</span>
+          <span class="trump-pct ${chg>=0?'pos':'neg'}">${chg>=0?'+':''}${chg}%</span>
+          ${q1!=null?`<span class="trump-pct ${q1>=0?'pos':'neg'}" title="Since Q1 2026">${q1>=0?'+':''}${q1}% Q1</span>`:''}
         </div>
       </div>`;
-    }).join('')+'</div>';
-}
+    }).join('');
 
-function renderTrumpPortfolio(data,el){
-  const buys=data.buys||[];
-  const sells=data.sells||[];
-  const DISCLAIMER=data.disclaimer||'';
-  el.innerHTML=`
-    <div style="font-family:'DM Mono',monospace;font-size:9px;color:var(--text-muted);letter-spacing:.12em;margin-bottom:8px">ALL HOLDINGS · Q1 2026 OGE 278-T</div>
-    <div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;overflow:hidden;margin-bottom:8px">
-      ${buys.map(r=>{
-        const q1=r.since_q1_pct;
-        const chg=r.change_pct||0;
-        return`<div class="trump-row" onclick="document.getElementById('tickerInput').value='${r.ticker}';switchTab('screener');runScreener()" style="cursor:pointer">
-          <div style="display:flex;align-items:center;gap:8px">
-            <span style="font-family:'DM Mono',monospace;font-size:13px;font-weight:700;color:var(--text)">${r.ticker}</span>
-            <span style="font-family:'DM Mono',monospace;font-size:9px;color:var(--text-muted)">${r.size}</span>
-          </div>
-          <div style="display:flex;align-items:center;gap:10px">
-            <span style="font-family:'DM Mono',monospace;font-size:11px;color:var(--text-dim)">$${r.price||'—'}</span>
-            <span class="trump-pct ${chg>=0?'pos':'neg'}">${chg>=0?'+':''}${chg}%</span>
-            ${q1!==null&&q1!==undefined?`<span class="trump-pct ${q1>=0?'pos':'neg'}" title="Since Q1 2026 start">${q1>=0?'+':''}${q1}% since Q1</span>`:''}
-          </div>
-        </div>`;
-      }).join('')}
-      ${sells.map(r=>`<div class="trump-row trump-sold">
-        <span style="font-family:'DM Mono',monospace;font-size:13px;color:var(--text-muted)">${r.ticker} <span style="font-size:9px">SOLD</span></span>
-        <span style="font-family:'DM Mono',monospace;font-size:10px;color:var(--text-muted)">$${r.price||'—'}</span>
-      </div>`).join('')}
-    </div>
-    <div class="trump-disclaimer">⚖️ ${DISCLAIMER}<br>Source: OGE Form 278-T public filing. Updated quarterly on new disclosures.</div>`;
+    pel.innerHTML = `
+      <div style="font-family:'DM Mono',monospace;font-size:9px;color:var(--text-muted);letter-spacing:.12em;margin-bottom:8px">
+        🏛 PORTFOLIO HOLDINGS · ${portData.last_updated||'Q1 2026'}
+        <span style="margin-left:8px;color:var(--border2)">${portData.total_transactions||3848} total transactions</span>
+      </div>
+      <div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;overflow:hidden;margin-bottom:8px">${portRows}
+        ${sells.map(r=>`<div class="trump-row trump-sold">
+          <span style="font-family:'DM Mono',monospace;font-size:13px;color:var(--text-muted)">${r.ticker} <span style="font-size:9px">SOLD</span></span>
+          <span style="font-family:'DM Mono',monospace;font-size:10px;color:var(--text-muted)">$${r.price||'—'}</span>
+        </div>`).join('')}
+      </div>
+      <div style="font-family:'DM Mono',monospace;font-size:9px;color:var(--text-muted);margin-bottom:4px">Source: ${portSrc}</div>
+      <div class="trump-disclaimer">⚖️ ${DISCLAIMER}</div>`;
+  }
 }
 
 // ===== INTELLIGENCE ENGINE =====
