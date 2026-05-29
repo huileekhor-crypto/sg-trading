@@ -304,6 +304,52 @@ def run_intelligence_scan():
     return result
 
 
+# ── Trump Portfolio ───────────────────────────────────────────────────────────
+
+TRUMP_PORTFOLIO = {
+    # Bought — Q1 2026 OGE Form 278-T public disclosure
+    'NVDA': {'action':'buy','size':'large'},
+    'AVGO': {'action':'buy','size':'large'},
+    'ORCL': {'action':'buy','size':'large'},
+    'NOW':  {'action':'buy','size':'large'},
+    'ADBE': {'action':'buy','size':'large'},
+    'MSFT': {'action':'buy','size':'large'},
+    'AMZN': {'action':'buy','size':'large'},
+    'TXN':  {'action':'buy','size':'large'},
+    'DELL': {'action':'buy','size':'large'},
+    'MSI':  {'action':'buy','size':'large'},
+    'AAPL': {'action':'buy','size':'large'},
+    'PLTR': {'action':'buy','size':'large'},
+    'WDAY': {'action':'buy','size':'large'},
+    'NFLX': {'action':'buy','size':'medium'},
+    'CMCSA':{'action':'buy','size':'medium'},
+    # Sold — Q1 2026
+    'META': {'action':'sell','size':'large'},
+}
+
+_trump_prices_cache = {}   # permanent — historical ref prices never change
+_trump_alerts_cache = {}   # 30 min TTL
+
+
+def _trump_ref_price(ticker):
+    """Return closing price on first trading day of 2026 (Jan 2)."""
+    if ticker in _trump_prices_cache:
+        return _trump_prices_cache[ticker]
+    try:
+        import yfinance as yf
+        df = yf.download(ticker, start='2025-12-30', end='2026-01-07',
+                         progress=False, auto_adjust=True)
+        if not df.empty:
+            if hasattr(df.columns, 'levels'):
+                df.columns = df.columns.droplevel(1)
+            price = round(float(df['Close'].tolist()[0]), 2)
+            _trump_prices_cache[ticker] = price
+            return price
+    except Exception:
+        pass
+    return None
+
+
 # ── Routes ────────────────────────────────────────────────────────────────────
 
 @intelligence_bp.route('/intelligence/scan', methods=['GET'])
@@ -335,3 +381,70 @@ def get_latest():
     if row:
         return jsonify(row)
     return jsonify({'error': 'No intelligence scan yet — click Run Scan'}), 404
+
+
+@intelligence_bp.route('/trump/portfolio', methods=['GET'])
+def trump_portfolio():
+    from utils.price_fetcher import get_live_price
+    now     = datetime.now()
+    results = []
+    for ticker, info in TRUMP_PORTFOLIO.items():
+        try:
+            live      = get_live_price(ticker)
+            current   = live.get('price', 0)
+            ref       = _trump_ref_price(ticker)
+            pct_q1    = round(((current - ref) / ref) * 100, 1) if ref else None
+            results.append({
+                'ticker':       ticker,
+                'action':       info['action'],
+                'size':         info['size'],
+                'price':        current,
+                'change_pct':   live.get('change_pct', 0),
+                'ref_price':    ref,
+                'since_q1_pct': pct_q1,
+                'trump_holding': info['action'] == 'buy',
+            })
+        except Exception:
+            results.append({'ticker': ticker, 'action': info['action'],
+                            'size': info['size'], 'price': 0})
+
+    buys  = sorted([r for r in results if r['action']=='buy'],
+                   key=lambda x: x.get('since_q1_pct') or 0, reverse=True)
+    sells = [r for r in results if r['action']=='sell']
+
+    return jsonify({
+        'buys':      buys,
+        'sells':     sells,
+        'source':    'OGE Form 278-T — Q1 2026 public disclosure',
+        'disclaimer':'Trump accounts managed by third-party institutions. Public data only. Not financial advice.',
+        'timestamp': now.isoformat(),
+    })
+
+
+@intelligence_bp.route('/trump/alerts', methods=['GET'])
+def trump_alerts():
+    now    = datetime.now()
+    cached = _trump_alerts_cache.get('alerts')
+    if cached and (now - cached['ts']).total_seconds() < 1800:
+        return jsonify(cached['data'])
+
+    try:
+        from routes.breakout import _score_ticker, _get_market_regime
+        is_bull, _, _ = _get_market_regime()
+        buy_tickers   = [t for t, v in TRUMP_PORTFOLIO.items() if v['action'] == 'buy']
+
+        alerts = []
+        for ticker in buy_tickers:
+            try:
+                r = _score_ticker(ticker, is_bull)
+                if r and r['score'] >= 65:
+                    alerts.append(r)
+            except Exception:
+                pass
+
+        alerts.sort(key=lambda x: x['score'], reverse=True)
+        result = {'alerts': alerts, 'timestamp': now.isoformat()}
+        _trump_alerts_cache['alerts'] = {'data': result, 'ts': now}
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500

@@ -11,6 +11,12 @@ CACHE_TTL     = 1800   # 30 min for scores
 CANDLE_TTL    = 1800   # 30 min for price data
 CATALYST_TTL  = 86400  # 24 h for earnings dates
 
+# Trump Q1 2026 OGE Form 278-T public disclosure — buy positions
+TRUMP_BUYS = {
+    'NVDA','AVGO','ORCL','NOW','ADBE','MSFT','AMZN',
+    'TXN','DELL','MSI','AAPL','PLTR','WDAY','NFLX','CMCSA',
+}
+
 TOP_MOMENTUM_STOCKS = [
     'NVDA', 'MSFT', 'META', 'GOOGL', 'AMZN', 'AAPL', 'TSM', 'AVGO',
     'AMD',  'IONQ', 'QBTS', 'RGTI',  'PLTR', 'MSTR', 'TSLA', 'CRM',
@@ -295,10 +301,16 @@ def _score_ticker(ticker, is_bull=True):
     sigs.append({'name':'Catalyst Window','score':cat_score,'max':15,
                  'pass':cat_score>=8,'explanation':cat_ex})
 
+    # ── 11. Trump Portfolio Bonus (0-10) ──────────────────────────────────
+    if ticker in TRUMP_BUYS:
+        sigs.append({'name':'🏛 Trump Portfolio','score':10,'max':10,'pass':True,
+                     'explanation':'Trump Q1 2026 OGE 278-T — active buy position disclosed'})
+
     # ── Normalise + Regime Multiplier ─────────────────────────────────────
     raw_total  = sum(sg['score'] for sg in sigs)
+    max_raw    = MAX_RAW + (10 if ticker in TRUMP_BUYS else 0)
     regime_m   = 1.0 if is_bull else 0.65
-    normalized = min(100, round((raw_total / MAX_RAW) * 100 * regime_m))
+    normalized = min(100, round((raw_total / max_raw) * 100 * regime_m))
 
     if normalized < 50:
         return None
@@ -333,6 +345,7 @@ def _score_ticker(ticker, is_bull=True):
         'pct_from_high':  pct_from_high,
         'market_regime':  'BULL' if is_bull else 'BEAR',
         'regime_mult':    regime_m,
+        'trump_holding':  ticker in TRUMP_BUYS,
         'signal_details': sigs,
         'signals':        [sg['name'] for sg in sigs if sg['pass']],  # compat
         'score_breakdown': {                                            # compat

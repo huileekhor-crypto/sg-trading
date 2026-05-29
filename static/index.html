@@ -164,6 +164,15 @@ body::after{content:'';position:fixed;inset:0;background:repeating-linear-gradie
 .sector-cell.warm .sector-cell-dot{background:var(--amber);box-shadow:0 0 4px var(--amber);}
 .sector-cell.cold .sector-cell-dot{background:var(--bg5);}
 .intel-empty{text-align:center;padding:40px;color:var(--text-muted);font-family:'DM Mono',monospace;font-size:11px;line-height:1.8;}
+/* Trump Portfolio */
+.trump-badge{display:inline-flex;align-items:center;gap:5px;font-family:'DM Mono',monospace;font-size:9px;font-weight:700;letter-spacing:.08em;padding:3px 9px;border-radius:5px;background:rgba(255,140,0,.1);color:#FF8C00;border:1px solid rgba(255,140,0,.35);}
+.trump-row{display:flex;align-items:center;justify-content:space-between;padding:8px 14px;border-bottom:1px solid var(--border);gap:8px;flex-wrap:wrap;}
+.trump-row:last-child{border-bottom:none;}
+.trump-pct{font-family:'DM Mono',monospace;font-size:11px;font-weight:600;}
+.trump-pct.pos{color:var(--green);}
+.trump-pct.neg{color:var(--red);}
+.trump-sold{opacity:.5;text-decoration:line-through;}
+.trump-disclaimer{font-family:'DM Mono',monospace;font-size:9px;color:var(--text-muted);line-height:1.7;padding:10px 14px;background:var(--bg3);border-radius:6px;border-left:2px solid rgba(255,140,0,.3);margin-top:10px;}
 
 /* ===== SOCIAL SENTIMENT ===== */
 .sent-block{padding:14px 18px;border-top:1px solid var(--border);}
@@ -690,6 +699,10 @@ body::after{content:'';position:fixed;inset:0;background:repeating-linear-gradie
       <div style="text-align:center">
         <div class="tier-badge" id="resTierBadge">—</div>
         <div class="tier-sub">SETUP TIER</div>
+        <div id="resTrumpBadge" style="display:none;margin-top:8px">
+          <span class="trump-badge">🏛 Trump Portfolio</span>
+          <div style="font-family:'DM Mono',monospace;font-size:8px;color:var(--text-muted);margin-top:3px;text-align:center">Q1 2026 OGE filing</div>
+        </div>
       </div>
     </div>
 
@@ -800,6 +813,7 @@ body::after{content:'';position:fixed;inset:0;background:repeating-linear-gradie
 
     <div class="scan-all-row">
       <button class="btn btn-primary" onclick="scanAll()" id="scanAllBtn" style="flex:1">⚡ SCAN ALL + CHART</button>
+      <button class="btn btn-ghost" onclick="loadTrumpWatchlist()" style="white-space:nowrap;border-color:rgba(255,140,0,.4);color:#FF8C00">📋 Trump Portfolio</button>
     </div>
     <div class="err" id="wlError"></div>
     <div id="wlResults"></div>
@@ -1168,7 +1182,19 @@ body::after{content:'';position:fixed;inset:0;background:repeating-linear-gradie
       <div id="intelSetups"></div>
     </div>
 
-    <!-- Section 3: Sector Heat Map -->
+    <!-- Section 3: Trump Portfolio Alignment -->
+    <div style="margin-bottom:22px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:6px">
+        <div class="intel-section-title" style="margin-bottom:0">🏛 TRUMP PORTFOLIO ALIGNMENT</div>
+        <button class="btn btn-ghost" onclick="loadTrumpAlerts(true)" style="padding:4px 10px;font-size:10px;border-color:rgba(255,140,0,.4);color:#FF8C00">↻ Refresh</button>
+      </div>
+      <div id="intelTrumpAlerts">
+        <div style="font-family:'DM Mono',monospace;font-size:10px;color:var(--text-muted)">Loading Trump holdings with breakout scores…</div>
+      </div>
+      <div id="intelTrumpPortfolio" style="margin-top:14px"></div>
+    </div>
+
+    <!-- Section 4: Sector Heat Map -->
     <div style="margin-bottom:22px">
       <div class="intel-section-title">SECTOR HEAT MAP</div>
       <div class="sector-grid" id="intelSectorGrid"></div>
@@ -1220,7 +1246,7 @@ function switchTab(tab){
   if(tab==='journal')loadJournal();
   if(tab==='alerts'){loadAlerts();ackAlerts();loadRecipients();loadTrending();}
   if(tab==='earnings')loadEarningsCalendar();
-  if(tab==='intelligence')loadIntelLatest();
+  if(tab==='intelligence'){loadIntelLatest();loadTrumpAlerts();}
 }
 
 // ===== WATCHLIST STATE (localStorage) =====
@@ -1577,6 +1603,8 @@ function renderScreener(d){
   document.getElementById('resStopNote').textContent=d.stop_note;
   document.getElementById('resTarget').textContent=d.target;
   document.getElementById('resTargetNote').textContent=d.target_note;
+  const trumpEl=document.getElementById('resTrumpBadge');
+  if(trumpEl)trumpEl.style.display=TRUMP_BUYS.has(d.ticker)?'':'none';
   document.getElementById('resultCard').classList.add('show');
   startPriceRefresh(d.ticker);
   loadSentiment(d.ticker);
@@ -3039,6 +3067,102 @@ function renderEarningsWarning(events){
 
 // Silently load earnings warnings 3s after page load
 setTimeout(()=>loadEarningsCalendar(true), 3000);
+
+// ===== TRUMP PORTFOLIO =====
+const TRUMP_BUYS = new Set([
+  'NVDA','AVGO','ORCL','NOW','ADBE','MSFT','AMZN',
+  'TXN','DELL','MSI','AAPL','PLTR','WDAY','NFLX','CMCSA',
+]);
+
+function loadTrumpWatchlist(){
+  const tickers=[...TRUMP_BUYS];
+  tickers.forEach(addTicker);
+  showToast(`${tickers.length} Trump portfolio tickers added to watchlist`);
+}
+
+async function loadTrumpAlerts(force=false){
+  const el=document.getElementById('intelTrumpAlerts');
+  const pel=document.getElementById('intelTrumpPortfolio');
+  if(!el)return;
+  el.innerHTML='<div style="font-family:\'DM Mono\',monospace;font-size:10px;color:var(--text-muted)">Scanning Trump holdings for breakout signals…</div>';
+  try{
+    const[alertRes,portRes]=await Promise.all([
+      fetch('/api/trump/alerts'),
+      fetch('/api/trump/portfolio'),
+    ]);
+    const[alertData,portData]=await Promise.all([alertRes.json(),portRes.json()]);
+    renderTrumpAlerts(alertData,el);
+    if(pel)renderTrumpPortfolio(portData,pel);
+  }catch(e){
+    el.innerHTML='<div style="font-size:11px;color:var(--text-muted)">Trump alerts unavailable</div>';
+  }
+}
+
+function renderTrumpAlerts(data,el){
+  const alerts=data.alerts||[];
+  if(!alerts.length){
+    el.innerHTML='<div style="font-family:\'DM Mono\',monospace;font-size:11px;color:var(--text-muted)">No Trump holdings currently at breakout score ≥ 65.</div>';
+    return;
+  }
+  el.innerHTML=`<div style="display:flex;flex-direction:column;gap:8px">`+
+    alerts.map((r,i)=>{
+      const rc=r.alert_level==='IMMINENT'?'STRONG':r.alert_level==='WATCH'?'BUY':'WATCH';
+      const chg=r.price_change||0;
+      return`<div class="intel-card ${rc}" style="animation-delay:${i*.06}s">
+        <div class="intel-card-top">
+          <div class="intel-ring ${rc}">
+            <div class="intel-ring-score">${r.score}</div>
+            <div class="intel-ring-label">${rc==='STRONG'?'S.BUY':rc}</div>
+          </div>
+          <div class="intel-info">
+            <div class="intel-ticker-row">
+              <span class="intel-ticker">${r.ticker}</span>
+              <span class="trump-badge">🏛 Trump</span>
+              <span class="intel-badge ${rc}">${r.alert_emoji} ${r.alert_label}</span>
+            </div>
+            <div style="font-family:'DM Mono',monospace;font-size:11px;color:var(--text-dim);margin-top:4px">
+              $${r.price} <span class="${chg>=0?'price-chg up':'price-chg down'}">${chg>=0?'+':''}${chg}%</span>
+            </div>
+            <div style="font-size:11px;color:var(--text-muted);margin-top:4px;font-style:italic">${(r.why||'').split('|')[0].trim()}</div>
+          </div>
+        </div>
+        <div style="padding:6px 18px 10px;display:flex;gap:6px">
+          <button class="btn btn-primary" style="flex:1;font-size:10px;padding:7px" onclick="analyseAndChart('${r.ticker}')">📊 Analyse</button>
+          <button class="btn btn-ghost" style="font-size:10px;padding:7px 12px" onclick="addTicker('${r.ticker}');showToast('${r.ticker} added')">+ WL</button>
+        </div>
+      </div>`;
+    }).join('')+'</div>';
+}
+
+function renderTrumpPortfolio(data,el){
+  const buys=data.buys||[];
+  const sells=data.sells||[];
+  const DISCLAIMER=data.disclaimer||'';
+  el.innerHTML=`
+    <div style="font-family:'DM Mono',monospace;font-size:9px;color:var(--text-muted);letter-spacing:.12em;margin-bottom:8px">ALL HOLDINGS · Q1 2026 OGE 278-T</div>
+    <div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;overflow:hidden;margin-bottom:8px">
+      ${buys.map(r=>{
+        const q1=r.since_q1_pct;
+        const chg=r.change_pct||0;
+        return`<div class="trump-row" onclick="document.getElementById('tickerInput').value='${r.ticker}';switchTab('screener');runScreener()" style="cursor:pointer">
+          <div style="display:flex;align-items:center;gap:8px">
+            <span style="font-family:'DM Mono',monospace;font-size:13px;font-weight:700;color:var(--text)">${r.ticker}</span>
+            <span style="font-family:'DM Mono',monospace;font-size:9px;color:var(--text-muted)">${r.size}</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px">
+            <span style="font-family:'DM Mono',monospace;font-size:11px;color:var(--text-dim)">$${r.price||'—'}</span>
+            <span class="trump-pct ${chg>=0?'pos':'neg'}">${chg>=0?'+':''}${chg}%</span>
+            ${q1!==null&&q1!==undefined?`<span class="trump-pct ${q1>=0?'pos':'neg'}" title="Since Q1 2026 start">${q1>=0?'+':''}${q1}% since Q1</span>`:''}
+          </div>
+        </div>`;
+      }).join('')}
+      ${sells.map(r=>`<div class="trump-row trump-sold">
+        <span style="font-family:'DM Mono',monospace;font-size:13px;color:var(--text-muted)">${r.ticker} <span style="font-size:9px">SOLD</span></span>
+        <span style="font-family:'DM Mono',monospace;font-size:10px;color:var(--text-muted)">$${r.price||'—'}</span>
+      </div>`).join('')}
+    </div>
+    <div class="trump-disclaimer">⚖️ ${DISCLAIMER}<br>Source: OGE Form 278-T public filing. Updated quarterly on new disclosures.</div>`;
+}
 
 // ===== INTELLIGENCE ENGINE =====
 let _intelTimer = null;
