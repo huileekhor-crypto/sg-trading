@@ -10,7 +10,6 @@ from routes.watchlist import watchlist_bp
 from routes.journal import journal_bp
 from routes.alerts import alerts_bp
 from routes.breakout import breakout_bp
-from routes.earnings import earnings_bp
 from models.user import init_db
 from models.journal import init_journal_db
 from models.alerts import init_alerts_db
@@ -35,7 +34,6 @@ app.register_blueprint(watchlist_bp, url_prefix='/api')
 app.register_blueprint(journal_bp,   url_prefix='/api')
 app.register_blueprint(alerts_bp,    url_prefix='/api')
 app.register_blueprint(breakout_bp,  url_prefix='/api')
-app.register_blueprint(earnings_bp,  url_prefix='/api')
 
 def login_required(f):
     """Decorator to protect routes"""
@@ -62,12 +60,17 @@ def dashboard():
     """Main dashboard — protected"""
     return send_from_directory('static', 'index.html')
 
-@app.route('/api/<path:path>', methods=['GET','POST','PUT','DELETE'])
-def api_protected(path):
-    """All API routes require login"""
-    if 'user_id' not in session:
+@app.before_request
+def require_login_for_api():
+    """Protect all /api/ routes — runs before any route handler."""
+    if request.path.startswith('/api/') and 'user_id' not in session:
         return jsonify({"error": "Authentication required"}), 401
-    return jsonify({"error": "Route not found"}), 404
+
+@app.errorhandler(404)
+def not_found(e):
+    if request.path.startswith('/api/'):
+        return jsonify({"error": "Route not found"}), 404
+    return jsonify({"error": "Not found"}), 404
 
 @app.route('/health')
 def health():
