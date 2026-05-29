@@ -363,7 +363,7 @@ def get_price(ticker):
     ticker = ticker.upper().strip()
     now = datetime.now()
     cached = _price_cache.get(ticker)
-    if cached and (now - cached['ts']).total_seconds() < 3:
+    if cached and (now - cached['ts']).total_seconds() < 8:
         return jsonify(cached['data'])
     data = get_live_price(ticker)
     _price_cache[ticker] = {"data": data, "ts": now}

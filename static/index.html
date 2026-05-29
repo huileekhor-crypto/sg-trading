@@ -645,6 +645,32 @@ body::after{content:'';position:fixed;inset:0;background:repeating-linear-gradie
 .email-status.ok{background:rgba(0,230,118,.1);color:var(--green);border:1px solid rgba(0,230,118,.25);}
 .email-status.err{background:rgba(255,61,90,.1);color:var(--red);border:1px solid rgba(255,61,90,.2);}
 @media(max-width:640px){.rcpt-form-row{flex-direction:column;}}
+/* ===== TICKER BAR ===== */
+.ticker-bar{overflow:hidden;background:var(--bg2);border-bottom:1px solid var(--border);height:30px;display:flex;align-items:center;}
+.tb-item{display:inline-flex;align-items:center;gap:5px;padding:0 14px;font-family:'DM Mono',monospace;font-size:10px;border-right:1px solid var(--border);height:30px;flex-shrink:0;}
+.tb-ticker{font-weight:700;color:var(--text);letter-spacing:.05em;}
+.tb-price{color:var(--text-dim);}
+.tb-chg.up{color:var(--green);}
+.tb-chg.down{color:var(--red);}
+.tb-ext{font-size:9px;color:var(--text-muted);}
+@keyframes tbScroll{from{transform:translateX(0)}to{transform:translateX(-50%)}}
+/* ===== CONNECTION BADGE ===== */
+.conn-badge{display:inline-flex;align-items:center;gap:4px;font-family:'DM Mono',monospace;font-size:9px;font-weight:700;letter-spacing:.08em;padding:3px 8px;border-radius:5px;border:1px solid;}
+.conn-badge.yahoo{background:rgba(0,230,118,.1);color:var(--green);border-color:rgba(0,230,118,.3);}
+.conn-badge.finnhub{background:rgba(255,179,0,.1);color:var(--amber);border-color:rgba(255,179,0,.3);}
+.conn-badge.offline{background:rgba(255,61,90,.08);color:var(--red);border-color:rgba(255,61,90,.2);}
+.delayed-badge{display:none;font-family:'DM Mono',monospace;font-size:9px;color:var(--amber);background:rgba(255,179,0,.1);border:1px solid rgba(255,179,0,.25);padding:2px 7px;border-radius:4px;}
+.delayed-badge.show{display:inline-flex;align-items:center;gap:4px;}
+/* ===== WATCHLIST LIVE PRICE ===== */
+.wl-live{display:flex;flex-direction:column;align-items:flex-end;min-width:48px;}
+.wl-price{font-family:'DM Mono',monospace;font-size:10px;font-weight:600;color:var(--text);}
+.wl-price-chg{font-size:9px;}
+.wl-price-chg.up{color:var(--green);}
+.wl-price-chg.down{color:var(--red);}
+@keyframes chipFlashGreen{0%,100%{background:inherit}40%{background:rgba(0,230,118,.2)}}
+@keyframes chipFlashRed{0%,100%{background:inherit}40%{background:rgba(255,61,90,.2)}}
+.chip-flash-green{animation:chipFlashGreen .8s ease;}
+.chip-flash-red{animation:chipFlashRed .8s ease;}
 </style>
 </head>
 <body>
@@ -656,7 +682,10 @@ body::after{content:'';position:fixed;inset:0;background:repeating-linear-gradie
     <div style="font-size:10px;color:var(--text-muted);margin-top:3px;font-family:'DM Mono',monospace;">DASHBOARD v2.0</div>
   </div>
   <div class="header-meta" style="display:flex;align-items:center;gap:12px">
-    <div><span class="live-dot"></span>LIVE</div>
+    <div style="display:flex;align-items:center;gap:6px">
+      <div id="connStatus" class="conn-badge offline">⏸ CONNECTING...</div>
+      <div id="delayedBadge" class="delayed-badge">⚠ Delayed</div>
+    </div>
     <div id="hDate">—</div>
     <div id="hTime">—</div>
     <div style="display:flex;align-items:center;gap:8px;margin-left:8px;padding-left:12px;border-left:1px solid var(--border)">
@@ -667,6 +696,10 @@ body::after{content:'';position:fixed;inset:0;background:repeating-linear-gradie
       </div>
     </div>
   </div>
+</div>
+
+<div id="tickerBar" class="ticker-bar" style="display:none">
+  <div id="tickerBarInner" style="display:flex;white-space:nowrap;"></div>
 </div>
 
 <div id="earningsWarnContainer" style="display:none"></div>
@@ -799,7 +832,10 @@ body::after{content:'';position:fixed;inset:0;background:repeating-linear-gradie
   <!-- USER WATCHLIST -->
   <div id="wlPanelUser">
     <div class="watchlist-section">
-      <div class="watchlist-title">My Watchlist</div>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+        <div class="watchlist-title" style="margin-bottom:0">My Watchlist</div>
+        <button class="btn btn-ghost" onclick="refreshAllPrices()" style="font-size:9px;padding:4px 10px;letter-spacing:.08em" title="Force immediate Yahoo Finance fetch for all tickers">↺ Refresh</button>
+      </div>
       <div class="input-row">
         <input class="txt-input ticker" id="wlInput" placeholder="Add ticker..." onkeydown="if(event.key==='Enter')addWlFromInput()">
         <button class="btn btn-primary" onclick="addWlFromInput()">ADD</button>
@@ -1304,6 +1340,7 @@ function addTicker(ticker){
   watchlist.push(ticker);
   saveWatchlist();
   renderWatchlistChips();
+  _fetchWlPrice(ticker,false);
 }
 
 function addWlFromInput(){
@@ -1364,12 +1401,20 @@ function renderWatchlistChips(){
   if(!watchlist.length){el.innerHTML='<div class="wl-empty">No tickers yet — add some above</div>';return;}
   el.innerHTML=watchlist.map(t=>{
     const cache=wlCache[t];
+    const pd=_wlPriceData[t];
     const sc=cache?signalColorMap[cache.signal]||'neutral':'neutral';
-    return `<div class="wl-chip signal-${sc}" onclick="quickAnalyse('${t}')">
+    const p=pd&&pd.price?parseFloat(pd.price).toFixed(2):null;
+    const pct=pd&&pd.change_pct!=null?parseFloat(pd.change_pct).toFixed(2):null;
+    const up=pd&&pd.change_pct>=0;
+    return `<div class="wl-chip signal-${sc}" id="wl-chip-${t}" onclick="quickAnalyse('${t}')">
       <div class="wl-signal-dot ${sc}"></div>
       <span class="wl-ticker">${t}</span>
       ${cache?`<span style="font-size:9px;color:var(--text-muted)">${cache.tier}</span>`:''}
-      ${_wlExtTag(cache)}
+      <span class="wl-ext" id="wl-ext-${t}">${_wlExtTag(pd||cache)}</span>
+      <div class="wl-live">
+        <span class="wl-price" id="wl-price-${t}">${p?`$${p}`:'—'}</span>
+        <span class="wl-price-chg ${up?'up':'down'}" id="wl-chg-${t}">${pct!=null?(up?'▲':'▼')+Math.abs(pct)+'%':''}</span>
+      </div>
       <span class="remove" onclick="event.stopPropagation();removeTicker('${t}')" title="Remove">×</span>
     </div>`;
   }).join('');
@@ -2089,8 +2134,163 @@ function showToast(msg){
   setTimeout(()=>t.style.transform='translateX(-50%) translateY(80px)',2200);
 }
 
+// ===== LIVE WATCHLIST PRICE SYSTEM =====
+let _wlPollTimer = null;
+let _tbPollTimer  = null;
+let _yahooFails   = {};  // { ticker: failCount }
+let _wlPriceData  = {};  // { ticker: priceApiResponse }
+const _FAIL_LIMIT   = 3;
+const _MAX_REQ_MIN  = 10;
+const _reqLog       = [];
+
+// Rate-limited fetch — max 10 Yahoo requests/minute, queue excess
+async function _rlFetch(url) {
+  const now = Date.now();
+  while (_reqLog.length && now - _reqLog[0] > 60000) _reqLog.shift();
+  if (_reqLog.length >= _MAX_REQ_MIN) {
+    const wait = Math.max(60100 - (Date.now() - _reqLog[0]), 500);
+    await new Promise(r => setTimeout(r, wait));
+    return _rlFetch(url);
+  }
+  _reqLog.push(Date.now());
+  const res = await fetch(url);
+  return res.json();
+}
+
+// Update connection status badge in header
+function _setConnStatus(src) {
+  const el = document.getElementById('connStatus');
+  const dl = document.getElementById('delayedBadge');
+  if (!el) return;
+  if (src === 'yahoo') {
+    el.className = 'conn-badge yahoo';
+    el.innerHTML = '<span class="live-dot"></span>LIVE (Yahoo)';
+  } else if (src === 'finnhub') {
+    el.className = 'conn-badge finnhub';
+    el.innerHTML = '<span class="live-dot" style="background:var(--amber);box-shadow:0 0 6px var(--amber)"></span>LIVE (Finnhub)';
+  } else {
+    el.className = 'conn-badge offline';
+    el.textContent = '⏸ RECONNECTING...';
+  }
+  if (dl) dl.classList.toggle('show', src === 'finnhub');
+}
+
+// Update a chip's price fields in-place — avoids full re-render
+function _updateChipPrice(ticker, data) {
+  const prev    = _wlPriceData[ticker];
+  _wlPriceData[ticker] = data;
+
+  const priceEl = document.getElementById(`wl-price-${ticker}`);
+  const chgEl   = document.getElementById(`wl-chg-${ticker}`);
+  const extEl   = document.getElementById(`wl-ext-${ticker}`);
+  const chipEl  = document.getElementById(`wl-chip-${ticker}`);
+
+  if (!priceEl) { renderWatchlistChips(); return; }
+
+  const p   = parseFloat(data.price).toFixed(2);
+  const pct = parseFloat(data.change_pct).toFixed(2);
+  const up  = data.change_pct >= 0;
+
+  if (prev && prev.price && prev.price !== data.price && chipEl) {
+    const cls = up ? 'chip-flash-green' : 'chip-flash-red';
+    chipEl.classList.remove('chip-flash-green','chip-flash-red');
+    void chipEl.offsetWidth;
+    chipEl.classList.add(cls);
+    setTimeout(() => chipEl.classList.remove(cls), 800);
+  }
+
+  priceEl.textContent = `$${p}`;
+  if (chgEl) {
+    chgEl.textContent  = `${up?'▲':'▼'}${Math.abs(pct)}%`;
+    chgEl.className    = `wl-price-chg ${up?'up':'down'}`;
+  }
+  if (extEl) extEl.innerHTML = _wlExtTag(data);
+}
+
+// Fetch price for one ticker and update its chip
+async function _fetchWlPrice(ticker, bypassCache) {
+  try {
+    const url  = `/api/price/${ticker}${bypassCache?`?nc=${Date.now()}`:''}`;
+    const data = await _rlFetch(url);
+    if (!data || !data.price) throw new Error('no price');
+    _yahooFails[ticker] = 0;
+    _setConnStatus(data.source === 'finnhub' ? 'finnhub' : 'yahoo');
+    _updateChipPrice(ticker, data);
+    updateTickerBar();
+  } catch(e) {
+    _yahooFails[ticker] = (_yahooFails[ticker]||0) + 1;
+    if (watchlist.length && watchlist.every(t => (_yahooFails[t]||0) >= _FAIL_LIMIT))
+      _setConnStatus('offline');
+    console.warn(`Price fetch [${ticker}]:`, e);
+  }
+}
+
+// Poll all watchlist tickers with 500ms stagger between each
+async function _pollAll(bypassCache) {
+  for (let i = 0; i < watchlist.length; i++) {
+    await _fetchWlPrice(watchlist[i], bypassCache);
+    if (i < watchlist.length - 1) await new Promise(r => setTimeout(r, 500));
+  }
+}
+
+function startWatchlistPolling() {
+  _pollAll(false);
+  if (!_wlPollTimer) _wlPollTimer = setInterval(() => _pollAll(false), 10000);
+  startTickerBarPolling();
+}
+
+function stopWatchlistPolling() {
+  if (_wlPollTimer) { clearInterval(_wlPollTimer); _wlPollTimer = null; }
+  if (_tbPollTimer) { clearInterval(_tbPollTimer); _tbPollTimer = null; }
+}
+
+// Manual refresh — bypasses 8s backend cache
+function refreshAllPrices() {
+  _pollAll(true);
+}
+
+// ===== TICKER BAR =====
+function updateTickerBar() {
+  const bar = document.getElementById('tickerBar');
+  if (!bar) return;
+  if (!watchlist.length) { bar.style.display = 'none'; return; }
+  bar.style.display = 'flex';
+
+  const items = watchlist.map(t => {
+    const d = _wlPriceData[t];
+    if (!d || !d.price)
+      return `<div class="tb-item"><span class="tb-ticker">${t}</span>&nbsp;<span class="tb-price">—</span></div>`;
+    const p   = parseFloat(d.price).toFixed(2);
+    const pct = parseFloat(d.change_pct).toFixed(2);
+    const up  = d.change_pct >= 0;
+    const ms  = (d.market_status||'').toUpperCase();
+    const ah  = d.post_market, pm = d.pre_market;
+    let ext = '';
+    if (ah?.available && (ms==='POST'||ms==='CLOSED'))
+      ext = `<span class="tb-ext">&nbsp;AH:${ah.change_pct>=0?'▲':'▼'}${Math.abs(parseFloat(ah.change_pct).toFixed(2))}%</span>`;
+    else if (pm?.available && ms.includes('PRE'))
+      ext = `<span class="tb-ext">&nbsp;PM:${pm.change_pct>=0?'▲':'▼'}${Math.abs(parseFloat(pm.change_pct).toFixed(2))}%</span>`;
+    return `<div class="tb-item"><span class="tb-ticker">${t}</span>&nbsp;<span class="tb-price">$${p}</span>&nbsp;<span class="tb-chg ${up?'up':'down'}">${up?'▲':'▼'}${Math.abs(pct)}%</span>${ext}</div>`;
+  }).join('');
+
+  const inner = document.getElementById('tickerBarInner');
+  if (!inner) return;
+  // Duplicate content for seamless CSS scroll loop
+  const doubled = items + items;
+  if (inner.innerHTML !== doubled) {
+    inner.innerHTML = doubled;
+    inner.style.cssText = `display:flex;white-space:nowrap;animation:tbScroll ${Math.max(watchlist.length*5,20)}s linear infinite;`;
+  }
+}
+
+function startTickerBarPolling() {
+  updateTickerBar();
+  if (!_tbPollTimer) _tbPollTimer = setInterval(updateTickerBar, 15000);
+}
+
 // Init watchlist
 renderWatchlistChips();
+startWatchlistPolling();
 </script>
 
 <script>
