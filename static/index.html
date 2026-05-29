@@ -1148,15 +1148,16 @@ async function runScreener(){
   },900);
 
   try{
-    const [res,finRes]=await Promise.all([
-      fetch(`/api/screener/${ticker}`),
-      fetch(`/api/financials/${ticker}`)
-    ]);
-    const [data,finData]=await Promise.all([res.json(),finRes.json()]);
-    clearInterval(iv);
+    const delay=ms=>new Promise(r=>setTimeout(r,ms));
+    const [res]=await Promise.all([fetch(`/api/screener/${ticker}`)]);
+    const data=await res.json();
     if(data.error)throw new Error(data.error);
     lastResult=data;
     renderScreener(data);
+    clearInterval(iv);
+    await delay(800);
+    const finRes=await fetch(`/api/financials/${ticker}`);
+    const finData=await finRes.json();
     renderFinancials(finData);
   }catch(e){
     clearInterval(iv);

@@ -379,7 +379,12 @@ def get_financials(ticker):
     try:
         fc = get_finnhub_client()
 
-        basic   = fc.company_basic_financials(ticker, 'all') or {}
+        # Each Finnhub call is individually protected — a rate-limit on one
+        # still lets the others succeed and show partial data.
+        try:
+            basic = fc.company_basic_financials(ticker, 'all') or {}
+        except Exception:
+            basic = {}
         metrics = basic.get('metric', {}) or {}
         series  = basic.get('series', {}) or {}
         annual  = series.get('annual', {}) or {}
@@ -420,7 +425,10 @@ def get_financials(ticker):
                 if r1:
                     rev_qoq = round(((r0 - r1) / abs(r1)) * 100, 1)
 
-        earnings = fc.stock_earnings(ticker) or []
+        try:
+            earnings = fc.stock_earnings(ticker) or []
+        except Exception:
+            earnings = []
         eps_quarters = []
         for e in earnings[:4]:
             eps_quarters.append({
@@ -449,7 +457,10 @@ def get_financials(ticker):
         except Exception:
             pass
 
-        recs       = fc.recommendation_trends(ticker) or []
+        try:
+            recs = fc.recommendation_trends(ticker) or []
+        except Exception:
+            recs = []
         latest_rec = recs[0] if recs else {}
         strong_buy  = int(latest_rec.get('strongBuy',  0) or 0)
         buy         = int(latest_rec.get('buy',        0) or 0)
