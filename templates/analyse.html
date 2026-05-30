@@ -1,0 +1,400 @@
+{% extends "base.html" %}
+{% set active = "analyse" %}
+{% block title %}Analyse — SG Trading{% endblock %}
+
+{% block extra_css %}
+<style>
+.search-bar { display:flex; gap:8px; margin-bottom:16px; }
+.search-bar input { flex:1; }
+.verdict-banner {
+  border-radius:var(--radius);
+  padding:20px;
+  margin-bottom:16px;
+  display:flex;
+  align-items:center;
+  gap:16px;
+}
+.verdict-banner.strong-buy { background:rgba(34,197,94,.08); border:1px solid rgba(34,197,94,.2); }
+.verdict-banner.buy        { background:rgba(34,197,94,.05); border:1px solid rgba(34,197,94,.15); }
+.verdict-banner.wait       { background:rgba(234,179,8,.06); border:1px solid rgba(234,179,8,.15); }
+.verdict-banner.weak       { background:rgba(107,114,128,.06); border:1px solid #2A2A2A; }
+.verdict-banner.avoid      { background:rgba(239,68,68,.06); border:1px solid rgba(239,68,68,.2); }
+.verdict-banner .ticker { font-family:'DM Mono',monospace; font-size:26px; font-weight:800; }
+.verdict-banner .score  { font-family:'DM Mono',monospace; font-size:14px; font-weight:700; opacity:.7; }
+.layer-row { display:flex; align-items:center; gap:10px; margin-bottom:10px; }
+.layer-name { font-size:11px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; width:80px; flex-shrink:0; color:var(--text-dim); }
+.layer-score { font-family:'DM Mono',monospace; font-size:12px; font-weight:700; width:36px; text-align:right; }
+.layer-track { flex:1; height:6px; background:var(--bg4); border-radius:3px; overflow:hidden; }
+.layer-fill { height:100%; border-radius:3px; background:var(--orange); }
+.layer-reason { font-size:10px; color:var(--text-muted); margin-top:2px; }
+.ai-section { background:var(--bg2); border:1px solid var(--border); border-radius:var(--radius); padding:16px; margin-bottom:12px; }
+.ai-section-title { font-size:10px; font-weight:700; letter-spacing:.12em; text-transform:uppercase; margin-bottom:8px; }
+.ai-section-title.green { color:var(--green); }
+.ai-section-title.red   { color:var(--red); }
+.ai-section-title.blue  { color:var(--blue); }
+.ai-section-title.orange{ color:var(--orange); }
+.ai-text { font-size:13px; line-height:1.6; color:var(--text); }
+.setup-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+.setup-item { background:var(--bg3); border-radius:8px; padding:12px; text-align:center; }
+.setup-label { font-size:9px; font-weight:700; letter-spacing:.12em; text-transform:uppercase; color:var(--text-muted); margin-bottom:4px; }
+.setup-val { font-family:'DM Mono',monospace; font-size:16px; font-weight:700; }
+.setup-val.green { color:var(--green); }
+.setup-val.red   { color:var(--red); }
+.setup-val.orange{ color:var(--orange); }
+.fund-grid { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+.fund-item { background:var(--bg3); border:1px solid var(--border); border-radius:8px; padding:10px; }
+.fund-label { font-size:9px; font-weight:700; letter-spacing:.1em; text-transform:uppercase; color:var(--text-muted); }
+.fund-val { font-family:'DM Mono',monospace; font-size:14px; font-weight:700; margin-top:2px; }
+.ibkr-box {
+  background:var(--bg3);
+  border:1px solid var(--border2);
+  border-radius:8px;
+  padding:12px;
+  font-family:'DM Mono',monospace;
+  font-size:12px;
+  color:var(--orange);
+  cursor:pointer;
+}
+.ibkr-box:hover { border-color:#444; }
+.news-item { padding:8px 0; border-bottom:1px solid var(--border); font-size:12px; }
+.news-item:last-child { border-bottom:none; }
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- Search -->
+<div class="search-bar">
+  <input class="form-input" id="tickerInput" type="text" placeholder="Enter ticker (e.g. MU, NVDA)"
+         value="{{ ticker }}" style="font-family:'DM Mono',monospace;font-size:16px;font-weight:700;text-transform:uppercase"
+         onkeydown="if(event.key==='Enter')runAnalysis()">
+  <div class="mode-toggle">
+    <button class="mode-btn active-swing" id="btnSwing" onclick="setMode('SWING')">Swing</button>
+    <button class="mode-btn" id="btnLT" onclick="setMode('LONG-TERM')">Long-Term</button>
+  </div>
+  <button class="btn btn-primary" onclick="runAnalysis()" id="analyseBtn">Analyse</button>
+</div>
+
+<div id="result" style="display:none">
+
+  <!-- Verdict banner -->
+  <div class="verdict-banner" id="verdictBanner">
+    <div class="score-ring" id="scoreRing">—</div>
+    <div style="flex:1">
+      <div class="verdict-banner .ticker" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+        <span id="rTicker" class="ticker-label" style="font-size:24px"></span>
+        <span id="rVerdict" class="badge"></span>
+        <span id="rMode" class="badge"></span>
+      </div>
+      <div style="margin-top:6px;display:flex;align-items:baseline;gap:8px">
+        <span id="rPrice" class="price-big"></span>
+        <span id="rChange" class="price-change" style="font-size:13px"></span>
+      </div>
+      <div id="rPrePost" style="font-size:11px;color:var(--text-muted);margin-top:2px"></div>
+    </div>
+    <div style="text-align:right">
+      <div id="rScore" style="font-family:'DM Mono',monospace;font-size:32px;font-weight:700"></div>
+      <div style="font-size:10px;color:var(--text-muted)">/ 100</div>
+    </div>
+  </div>
+
+  <!-- 6-layer breakdown -->
+  <div class="card" style="margin-bottom:12px">
+    <div class="card-title">6-Layer Analysis</div>
+    <div id="layers"></div>
+  </div>
+
+  <!-- Discipline checks -->
+  <div class="card" style="margin-bottom:12px">
+    <div class="card-title">Discipline Check</div>
+    <div id="discipline"></div>
+  </div>
+
+  <!-- AI analysis -->
+  <div id="aiSection" style="margin-bottom:12px"></div>
+
+  <!-- Trade setup -->
+  <div class="card" style="margin-bottom:12px">
+    <div class="card-title">Trade Setup</div>
+    <div class="setup-grid" id="setupGrid"></div>
+    <div style="margin-top:12px" id="positionInfo"></div>
+    <div style="margin-top:12px">
+      <div style="font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--text-muted);margin-bottom:6px">IBKR Order</div>
+      <div class="ibkr-box" id="ibkrOrder" onclick="copyIbkr()">—</div>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:12px">
+      <button class="btn btn-primary btn-sm" onclick="addToPositions()">+ Add Position</button>
+      <button class="btn btn-ghost btn-sm" onclick="window.location.href='/manage'">View Manage</button>
+    </div>
+  </div>
+
+  <!-- Smart money detail -->
+  <div class="card" id="uwCard" style="margin-bottom:12px;display:none">
+    <div class="card-title" style="color:var(--green)">Smart Money (Unusual Whales)</div>
+    <div id="uwDetail"></div>
+  </div>
+
+  <!-- Key numbers -->
+  <div class="card" style="margin-bottom:12px">
+    <div class="card-title">Key Numbers</div>
+    <div class="fund-grid" id="fundGrid"></div>
+  </div>
+
+  <!-- News -->
+  <div class="card" style="margin-bottom:12px" id="newsCard">
+    <div class="card-title">Recent News</div>
+    <div id="newsList"></div>
+  </div>
+
+</div>
+
+<div id="loading" style="display:none;text-align:center;padding:48px">
+  <div class="spin" style="width:32px;height:32px;border-width:3px"></div>
+  <div style="margin-top:12px;color:var(--text-muted)">Running 6-layer analysis...</div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let currentMode = 'SWING';
+let currentAnalysis = null;
+
+function setMode(mode) {
+  currentMode = mode;
+  document.getElementById('btnSwing').className = 'mode-btn' + (mode==='SWING'?' active-swing':'');
+  document.getElementById('btnLT').className    = 'mode-btn' + (mode==='LONG-TERM'?' active-lt':'');
+  if (currentAnalysis) renderResult(currentAnalysis);
+}
+
+async function runAnalysis() {
+  const ticker = document.getElementById('tickerInput').value.trim().toUpperCase();
+  if (!ticker) { toast('Enter a ticker'); return; }
+  history.pushState({}, '', '/analyse?ticker=' + ticker);
+
+  document.getElementById('result').style.display  = 'none';
+  document.getElementById('loading').style.display = '';
+  document.getElementById('analyseBtn').disabled = true;
+
+  const d = await api('/api/analyse', {
+    method: 'POST',
+    body: JSON.stringify({ticker, mode: currentMode})
+  });
+  document.getElementById('loading').style.display = 'none';
+  document.getElementById('analyseBtn').disabled = false;
+
+  if (!d) return;
+  if (d.error) { toast(d.error); return; }
+  currentAnalysis = d;
+  renderResult(d);
+  document.getElementById('result').style.display = '';
+}
+
+function renderResult(d) {
+  const vc = d.verdict_class || 'wait';
+
+  // Verdict banner
+  const banner = document.getElementById('verdictBanner');
+  banner.className = 'verdict-banner ' + vc;
+  document.getElementById('rTicker').textContent = d.ticker;
+  document.getElementById('rVerdict').className = 'badge badge-' + vc;
+  document.getElementById('rVerdict').textContent = d.verdict;
+  document.getElementById('rMode').className = 'badge badge-' + (d.mode==='SWING'?'swing':'lt');
+  document.getElementById('rMode').textContent = d.mode;
+  document.getElementById('rScore').textContent = d.score;
+  document.getElementById('rScore').style.color = scoreColor(d.score);
+
+  const ring = document.getElementById('scoreRing');
+  ring.className = 'score-ring ' + vc;
+  ring.textContent = d.score;
+
+  const pd = d.price_data || {};
+  document.getElementById('rPrice').textContent = '$' + fmt(d.price);
+  const chg = pd.change_pct || 0;
+  const chgEl = document.getElementById('rChange');
+  chgEl.textContent = (chg >= 0 ? '+' : '') + fmt(chg, 2) + '% today';
+  chgEl.className = 'price-change ' + (chg >= 0 ? 'pos' : 'neg');
+
+  let prePost = '';
+  if (pd.pre_price) prePost = `Pre-mkt $${fmt(pd.pre_price)} · `;
+  if (pd.post_price) prePost += `After $${fmt(pd.post_price)} · `;
+  if (pd.market_state) prePost += pd.market_state;
+  document.getElementById('rPrePost').textContent = prePost;
+
+  // Layers
+  const layers = d.layers || {};
+  const layerDefs = [
+    {key:'trend',      label:'Trend',      max:25},
+    {key:'momentum',   label:'Momentum',   max:25},
+    {key:'volume',     label:'Volume',     max:20},
+    {key:'structure',  label:'Structure',  max:20},
+    {key:'catalyst',   label:'Catalyst',   max:10},
+    {key:'smart_money',label:'Smart Money',max:20},
+  ];
+  document.getElementById('layers').innerHTML = layerDefs.map(l => {
+    const layer  = layers[l.key] || {};
+    const score  = layer.score || 0;
+    const pct    = Math.round(score / l.max * 100);
+    const reason = layer.reason || (layer.reasons && layer.reasons[0]) || '';
+    return `<div class="layer-row">
+      <div class="layer-name">${l.label}</div>
+      <div class="layer-track"><div class="layer-fill" style="width:${pct}%"></div></div>
+      <div class="layer-score">${score}/${l.max}</div>
+    </div>
+    <div class="layer-reason" style="margin-bottom:10px;padding-left:90px">${reason}</div>`;
+  }).join('');
+
+  // Discipline
+  const disc = d.discipline || {};
+  const discItems = [
+    {key:'not_extended',   label:'Not extended (structure ok)'},
+    {key:'not_overbought', label:'Not overbought (RSI ok)'},
+    {key:'has_catalyst',   label:'Real catalyst present'},
+    {key:'stop_defined',   label:'Stop loss defined'},
+    {key:'smart_money',    label:'Smart money confirms'},
+  ];
+  document.getElementById('discipline').innerHTML = discItems.map(item => {
+    const pass = disc[item.key];
+    return `<div class="check-row">
+      <span class="${pass?'check-pass':'check-fail'}">${pass?'✓':'✗'}</span>
+      <span style="font-size:12px">${item.label}</span>
+    </div>`;
+  }).join('');
+
+  // AI
+  const ai = d.ai || {};
+  const aiSections = [
+    {key:'why_buy',       label:'Why Buy',        cls:'green'},
+    {key:'why_fail',      label:'Why It Could Fail', cls:'red'},
+    {key:'when_to_enter', label:'When to Enter (SGT)', cls:'blue'},
+    {key:'exit_strategy', label:'Exit Strategy',   cls:'orange'},
+    {key:'verdict',       label:'AI Verdict',      cls:'orange'},
+  ];
+  document.getElementById('aiSection').innerHTML = aiSections.filter(s => ai[s.key]).map(s =>
+    `<div class="ai-section">
+      <div class="ai-section-title ${s.cls}">${s.label}</div>
+      <div class="ai-text">${escHtml(ai[s.key])}</div>
+    </div>`
+  ).join('');
+
+  // Trade setup
+  const t = d.trade || {};
+  const setupItems = d.mode === 'SWING' ? [
+    {label:'Entry',  val:'$' + fmt(t.entry),   color:''},
+    {label:'Stop',   val:'$' + fmt(t.stop),    color:'red'},
+    {label:'Target', val:'$' + fmt(t.target),  color:'green'},
+    {label:'R:R',    val: (t.r_r||0) + ':1',   color:'orange'},
+  ] : [
+    {label:'Entry',  val:'$' + fmt(t.entry),   color:''},
+    {label:'Stop',   val:'$' + fmt(t.stop),    color:'red'},
+    {label:'Target', val:'$' + fmt(t.target),  color:'green'},
+    {label:'R:R',    val: (t.r_r||0) + ':1',   color:'orange'},
+  ];
+  document.getElementById('setupGrid').innerHTML = setupItems.map(s =>
+    `<div class="setup-item">
+      <div class="setup-label">${s.label}</div>
+      <div class="setup-val ${s.color}">${s.val}</div>
+    </div>`
+  ).join('');
+
+  document.getElementById('positionInfo').innerHTML =
+    `<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:12px">
+      <div><span style="color:var(--text-muted)">Shares</span> <strong>${t.shares||0}</strong></div>
+      <div><span style="color:var(--text-muted)">Cost</span> <strong>$${fmt(t.cost||0,0)}</strong></div>
+      <div><span style="color:var(--red)">Max Loss</span> <strong>$${fmt(t.max_loss||0,0)}</strong></div>
+      <div><span style="color:var(--green)">Pot. Gain</span> <strong>$${fmt(t.potential_gain||0,0)}</strong></div>
+    </div>
+    ${d.weekly_pct ? `<div style="font-size:11px;color:var(--text-muted);margin-top:8px">= ${d.weekly_pct}% of weekly target</div>` : ''}`;
+
+  document.getElementById('ibkrOrder').textContent = d.ibkr_order || '—';
+  document.getElementById('ibkrOrder').dataset.order = d.ibkr_order || '';
+
+  // Smart money detail
+  const uw = (d.layers||{}).smart_money || {};
+  if (uw.notes && uw.notes.length) {
+    document.getElementById('uwCard').style.display = '';
+    document.getElementById('uwDetail').innerHTML = uw.notes.map(n =>
+      `<div class="check-row"><span class="check-pass">✓</span><span style="font-size:12px">${n}</span></div>`
+    ).join('');
+  } else if (!uw.available) {
+    document.getElementById('uwCard').style.display = '';
+    document.getElementById('uwDetail').innerHTML = '<div style="font-size:12px;color:var(--text-muted)">UW_API_KEY not configured — set in Azure settings</div>';
+  } else {
+    document.getElementById('uwCard').style.display = 'none';
+  }
+
+  // Fundamentals
+  const f = d.fundamentals || {};
+  const fundItems = [
+    {label:'P/E',          val: f.pe_ratio ? fmt(f.pe_ratio,1) : '—'},
+    {label:'Fwd P/E',     val: f.forward_pe ? fmt(f.forward_pe,1) : '—'},
+    {label:'Rev Growth',  val: f.revenue_growth ? (f.revenue_growth*100).toFixed(1)+'%' : '—'},
+    {label:'Gross Margin',val: f.gross_margins ? (f.gross_margins*100).toFixed(1)+'%' : '—'},
+    {label:'Mkt Cap',     val: fmtMcap(f.market_cap)},
+    {label:'52wk High',   val: f['52wk_high'] ? '$'+fmt(f['52wk_high']) : '—'},
+    {label:'52wk Low',    val: f['52wk_low']  ? '$'+fmt(f['52wk_low'])  : '—'},
+    {label:'Beta',        val: f.beta ? fmt(f.beta,2) : '—'},
+  ];
+  document.getElementById('fundGrid').innerHTML = fundItems.map(fi =>
+    `<div class="fund-item"><div class="fund-label">${fi.label}</div><div class="fund-val">${fi.val}</div></div>`
+  ).join('');
+
+  // News
+  const news = d.news || [];
+  if (news.length) {
+    document.getElementById('newsCard').style.display = '';
+    document.getElementById('newsList').innerHTML = news.map(n =>
+      `<div class="news-item">
+        <div style="font-weight:600">${escHtml(n.headline||'')}</div>
+        <div style="color:var(--text-muted);font-size:10px;margin-top:2px">${n.source||''}</div>
+      </div>`
+    ).join('');
+  } else {
+    document.getElementById('newsCard').style.display = 'none';
+  }
+}
+
+function copyIbkr() {
+  const order = document.getElementById('ibkrOrder').dataset.order;
+  if (order) copy(order, 'IBKR order');
+}
+
+async function addToPositions() {
+  if (!currentAnalysis) return;
+  const d = currentAnalysis;
+  const t = d.trade || {};
+  const r = await api('/api/positions', {
+    method: 'POST',
+    body: JSON.stringify({
+      ticker: d.ticker, mode: d.mode, entry_price: d.price,
+      shares: t.shares||0, stop: t.stop, target: t.target, score: d.score,
+      uw_notes: JSON.stringify((d.layers?.smart_money?.notes)||[])
+    })
+  });
+  if (r && r.success) toast('Added to positions ✓');
+  else toast('Error adding position');
+}
+
+function scoreColor(s) {
+  if (s>=85) return 'var(--green)';
+  if (s>=70) return '#4ade80';
+  if (s>=55) return 'var(--yellow)';
+  if (s>=40) return '#9ca3af';
+  return 'var(--red)';
+}
+function fmtMcap(v) {
+  if (!v) return '—';
+  if (v>=1e12) return '$'+(v/1e12).toFixed(1)+'T';
+  if (v>=1e9)  return '$'+(v/1e9).toFixed(1)+'B';
+  return '$'+(v/1e6).toFixed(0)+'M';
+}
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+// Auto-analyse if ticker in URL
+const urlTicker = new URLSearchParams(window.location.search).get('ticker');
+if (urlTicker) {
+  document.getElementById('tickerInput').value = urlTicker;
+  runAnalysis();
+}
+</script>
+{% endblock %}

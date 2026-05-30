@@ -1,0 +1,115 @@
+{% extends "base.html" %}
+{% set active = "journal" %}
+{% block title %}Backtest — SG Trading{% endblock %}
+
+{% block extra_css %}
+<style>
+.result-win  { color: var(--green); }
+.result-loss { color: var(--red); }
+.bt-row { display:flex; gap:8px; padding:8px 0; border-bottom:1px solid var(--border); font-size:12px; }
+.bt-row:last-child { border-bottom:none; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div style="font-size:18px;font-weight:800;margin-bottom:16px">Strategy Backtest</div>
+<div style="font-size:13px;color:var(--text-muted);margin-bottom:20px">
+  Validates the 6-layer SWING strategy on ~2 years of real data before risking real money.
+</div>
+
+<div class="card" style="margin-bottom:16px">
+  <div class="card-title">Parameters</div>
+  <div class="grid-2">
+    <div class="form-group">
+      <label class="form-label">Min Score (layers 1-4)</label>
+      <input class="form-input" id="btScore" type="number" value="85">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Stop Loss %</label>
+      <input class="form-input" id="btStop" type="number" step="0.5" value="6">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Target %</label>
+      <input class="form-input" id="btTarget" type="number" step="1" value="20">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Max Hold Days</label>
+      <input class="form-input" id="btDays" type="number" value="20">
+    </div>
+  </div>
+  <button class="btn btn-primary" onclick="runBacktest()" id="btBtn">Run Backtest</button>
+  <div style="font-size:11px;color:var(--text-muted);margin-top:8px">Tests on 20 AI/tech/semi stocks · ~2 years · Takes 30-60s</div>
+</div>
+
+<div id="btResults" style="display:none">
+  <div class="stats-grid" id="btSummary" style="margin-bottom:16px"></div>
+  <div class="card">
+    <div class="card-title">Recent Trades</div>
+    <div id="btTrades"></div>
+  </div>
+</div>
+
+<div id="btLoading" style="display:none;text-align:center;padding:40px">
+  <div class="spin" style="width:32px;height:32px;border-width:3px"></div>
+  <div style="margin-top:12px;color:var(--text-muted)">Running backtest... (30-60s)</div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+async function runBacktest() {
+  const btn = document.getElementById('btBtn');
+  btn.disabled = true;
+  document.getElementById('btResults').style.display = 'none';
+  document.getElementById('btLoading').style.display = '';
+
+  const score  = document.getElementById('btScore').value;
+  const stop   = document.getElementById('btStop').value;
+  const target = document.getElementById('btTarget').value;
+  const days   = document.getElementById('btDays').value;
+
+  const d = await api(
+    `/api/backtest/run?min_score=${score}&stop_pct=${stop}&target_pct=${target}&max_days=${days}`
+  );
+  document.getElementById('btLoading').style.display = 'none';
+  btn.disabled = false;
+
+  if (!d) return;
+
+  const s = d.summary || {};
+  const items = [
+    {label:'Total Trades', val: s.total_trades||0, color:''},
+    {label:'Win Rate',     val: (s.win_rate||0)+'%', color: s.win_rate>=55?'var(--green)':'var(--red)'},
+    {label:'Profit Factor',val: s.profit_factor||0, color: s.profit_factor>=1.5?'var(--green)':'var(--yellow)'},
+    {label:'Avg Win',      val: '+'+(s.avg_win_pct||0)+'%', color:'var(--green)'},
+    {label:'Avg Loss',     val: '-'+(s.avg_loss_pct||0)+'%', color:'var(--red)'},
+    {label:'Total Return', val: (s.total_return_pct||0)+'%', color: s.total_return_pct>=0?'var(--green)':'var(--red)'},
+  ];
+  document.getElementById('btSummary').innerHTML = items.map(i =>
+    `<div class="stat-box">
+      <div class="stat-val" style="color:${i.color||'var(--text)'}">${i.val}</div>
+      <div class="stat-label">${i.label}</div>
+    </div>`
+  ).join('');
+
+  const trades = d.trades || [];
+  document.getElementById('btTrades').innerHTML = trades.slice(-30).reverse().map(t =>
+    `<div class="bt-row">
+      <div style="font-family:'DM Mono',monospace;font-weight:700;width:60px">${t.ticker}</div>
+      <div style="flex:1;color:var(--text-muted)">
+        Score ${t.score} · RSI ${fmt(t.rsi||0,0)} · ${t.hold_days}d
+      </div>
+      <div class="result-${t.outcome==='WIN'?'win':'loss'};font-family:'DM Mono',monospace;font-weight:700">
+        ${t.outcome==='WIN'?'+':''}${t.pnl_pct}%
+      </div>
+      <div>
+        <span class="badge ${t.outcome==='WIN'?'badge-buy':'badge-avoid'}">${t.outcome}</span>
+      </div>
+    </div>`
+  ).join('');
+
+  document.getElementById('btResults').style.display = '';
+  toast(`Backtest: ${s.win_rate}% win rate, PF ${s.profit_factor}`);
+}
+</script>
+{% endblock %}

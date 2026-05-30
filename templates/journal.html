@@ -1,0 +1,230 @@
+{% extends "base.html" %}
+{% set active = "journal" %}
+{% block title %}Journal — SG Trading{% endblock %}
+
+{% block extra_css %}
+<style>
+.mission-card {
+  background: linear-gradient(135deg, var(--bg2), var(--bg3));
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 20px;
+  margin-bottom: 16px;
+}
+.mission-val { font-family:'DM Mono',monospace; font-size:28px; font-weight:700; color:var(--orange); }
+.target-val  { font-family:'DM Mono',monospace; font-size:14px; color:var(--text-dim); }
+.trade-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+}
+.trade-row:last-child { border-bottom: none; }
+.trade-ticker { font-family:'DM Mono',monospace; font-weight:800; font-size:14px; width:60px; flex-shrink:0; }
+.trade-pnl { font-family:'DM Mono',monospace; font-weight:700; }
+.trade-pnl.pos { color:var(--green); }
+.trade-pnl.neg { color:var(--red); }
+.log-form { background:var(--bg2); border:1px solid var(--border); border-radius:var(--radius); padding:16px; margin-bottom:16px; }
+.stats-grid { display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px; margin-bottom:16px; }
+@media(max-width:480px) { .stats-grid { grid-template-columns:1fr 1fr; } }
+.ai-insight {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--orange);
+  border-radius: var(--radius);
+  padding: 14px;
+  margin-bottom:16px;
+  font-size: 13px;
+  line-height: 1.6;
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- Mission tracker -->
+<div class="mission-card">
+  <div style="font-size:10px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--text-muted);margin-bottom:8px">$1M Mission Progress</div>
+  <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:8px">
+    <div class="mission-val" id="accountVal">$20,000</div>
+    <div class="target-val">→ $1,000,000</div>
+  </div>
+  <div class="progress-track">
+    <div class="progress-fill" id="missionBar" style="width:2%"></div>
+  </div>
+  <div style="display:flex;justify-content:space-between;margin-top:6px;font-size:10px;color:var(--text-muted)">
+    <span id="progressPct">2%</span>
+    <span>Weekly Target: <strong id="weeklyTarget">$1,500</strong></span>
+  </div>
+</div>
+
+<!-- Stats -->
+<div class="stats-grid" id="statsGrid">
+  <div class="stat-box"><div class="stat-val" id="sTotalPnl">—</div><div class="stat-label">Total P&L</div></div>
+  <div class="stat-box"><div class="stat-val" id="sWinRate">—</div><div class="stat-label">Win Rate</div></div>
+  <div class="stat-box"><div class="stat-val" id="sPF">—</div><div class="stat-label">Profit Factor</div></div>
+  <div class="stat-box"><div class="stat-val" id="sTotal">—</div><div class="stat-label">Total Trades</div></div>
+  <div class="stat-box"><div class="stat-val" id="sSwingPnl">—</div><div class="stat-label">Swing P&L</div></div>
+  <div class="stat-box"><div class="stat-val" id="sLtPnl">—</div><div class="stat-label">LT P&L</div></div>
+</div>
+
+<!-- AI insight -->
+<div class="ai-insight" id="aiInsight" style="display:none">
+  <div style="font-size:10px;font-weight:700;letter-spacing:.1em;color:var(--orange);margin-bottom:6px">🧠 AI COACHING</div>
+  <div id="insightText">Loading...</div>
+</div>
+
+<!-- Log trade -->
+<div class="section-header" style="margin-bottom:12px">
+  <div class="section-title">Trade History</div>
+  <button class="btn btn-ghost btn-sm" onclick="toggleLog()">+ Log Trade</button>
+</div>
+
+<div id="logForm" class="log-form" style="display:none">
+  <div class="card-title">Log Trade</div>
+  <div class="grid-2">
+    <div class="form-group">
+      <label class="form-label">Ticker</label>
+      <input class="form-input" id="lTicker" placeholder="MU" style="font-family:'DM Mono',monospace;text-transform:uppercase">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Mode</label>
+      <select class="form-select" id="lMode">
+        <option value="SWING">SWING</option>
+        <option value="LONG-TERM">LONG-TERM</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Entry Price</label>
+      <input class="form-input" id="lEntry" type="number" step="0.01" placeholder="98.40">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Exit Price</label>
+      <input class="form-input" id="lExit" type="number" step="0.01" placeholder="115.00">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Shares</label>
+      <input class="form-input" id="lShares" type="number" placeholder="60">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Score</label>
+      <input class="form-input" id="lScore" type="number" placeholder="85">
+    </div>
+  </div>
+  <div class="form-group">
+    <label class="form-label">Notes</label>
+    <input class="form-input" id="lNotes" placeholder="Entry/exit rationale">
+  </div>
+  <div style="display:flex;gap:8px">
+    <button class="btn btn-primary btn-sm" onclick="logTrade()">Log Trade</button>
+    <button class="btn btn-ghost btn-sm" onclick="toggleLog()">Cancel</button>
+  </div>
+</div>
+
+<!-- Trade list -->
+<div id="tradeList">
+  <div class="empty-state"><div class="icon">📔</div><div class="msg">No trades yet. Log your first trade.</div></div>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+async function loadStats() {
+  const s = await api('/api/stats');
+  if (!s) return;
+
+  document.getElementById('accountVal').textContent   = '$' + s.account_size.toLocaleString();
+  document.getElementById('weeklyTarget').textContent = '$' + s.weekly_target.toLocaleString();
+  document.getElementById('missionBar').style.width   = Math.min(s.progress_pct, 100) + '%';
+  document.getElementById('progressPct').textContent  = s.progress_pct + '%';
+
+  const pnlEl = document.getElementById('sTotalPnl');
+  pnlEl.textContent = (s.total_pnl>=0?'+':'') + '$' + fmt(Math.abs(s.total_pnl),0);
+  pnlEl.style.color = s.total_pnl>=0 ? 'var(--green)' : 'var(--red)';
+
+  document.getElementById('sWinRate').textContent = s.win_rate + '%';
+  document.getElementById('sPF').textContent      = s.profit_factor || '—';
+  document.getElementById('sTotal').textContent   = s.total;
+
+  const swingEl = document.getElementById('sSwingPnl');
+  swingEl.textContent = (s.swing_pnl>=0?'+':'') + '$' + fmt(Math.abs(s.swing_pnl),0);
+  swingEl.style.color = s.swing_pnl>=0 ? 'var(--green)' : 'var(--red)';
+
+  const ltEl = document.getElementById('sLtPnl');
+  ltEl.textContent = (s.lt_pnl>=0?'+':'') + '$' + fmt(Math.abs(s.lt_pnl),0);
+  ltEl.style.color = s.lt_pnl>=0 ? 'var(--green)' : 'var(--red)';
+}
+
+async function loadTrades() {
+  const trades = await api('/api/trades?limit=50');
+  if (!trades) return;
+  const el = document.getElementById('tradeList');
+  if (!trades.length) {
+    el.innerHTML = '<div class="empty-state"><div class="icon">📔</div><div class="msg">No trades yet.</div></div>';
+    return;
+  }
+  el.innerHTML = trades.map(t => {
+    const pnl = t.pnl || 0;
+    const pos = pnl >= 0;
+    return `<div class="trade-row">
+      <div class="trade-ticker">${t.ticker}</div>
+      <div>
+        <span class="badge badge-${t.mode==='SWING'?'swing':'lt'}" style="font-size:9px">${t.mode||'SWING'}</span>
+      </div>
+      <div style="flex:1">
+        <div style="color:var(--text-dim);font-size:11px">
+          ${t.date_open||''} → ${t.date_close||''}
+        </div>
+        <div style="font-size:11px;color:var(--text-muted)">${t.notes||''}</div>
+      </div>
+      <div style="text-align:right">
+        <div class="trade-pnl ${pos?'pos':'neg'}">${pos?'+':''}$${fmt(Math.abs(pnl),0)}</div>
+        <div style="font-size:10px;color:var(--text-muted)">${pos?'+':''}${fmt(t.pnl_pct||0,1)}%</div>
+      </div>
+      <div>
+        <span class="badge ${pos?'badge-buy':'badge-avoid'}">${t.outcome||''}</span>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+async function loadInsight() {
+  const r = await api('/api/journal/insight');
+  if (r && r.insight) {
+    document.getElementById('aiInsight').style.display = '';
+    document.getElementById('insightText').textContent = r.insight;
+  }
+}
+
+function toggleLog() {
+  const f = document.getElementById('logForm');
+  f.style.display = f.style.display === 'none' ? '' : 'none';
+}
+
+async function logTrade() {
+  const data = {
+    ticker:      document.getElementById('lTicker').value.toUpperCase(),
+    mode:        document.getElementById('lMode').value,
+    entry_price: parseFloat(document.getElementById('lEntry').value),
+    exit_price:  parseFloat(document.getElementById('lExit').value),
+    shares:      parseInt(document.getElementById('lShares').value),
+    score:       parseInt(document.getElementById('lScore').value)||0,
+    notes:       document.getElementById('lNotes').value,
+  };
+  if (!data.ticker) { toast('Ticker required'); return; }
+  const r = await api('/api/trades', {method:'POST', body:JSON.stringify(data)});
+  if (r && r.success) {
+    toggleLog();
+    loadStats();
+    loadTrades();
+    toast('Trade logged ✓');
+  } else toast('Error logging trade');
+}
+
+loadStats();
+loadTrades();
+loadInsight();
+</script>
+{% endblock %}

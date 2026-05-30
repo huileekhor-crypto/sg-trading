@@ -7,6 +7,75 @@ from datetime import datetime
 APP_URL = "https://sg-trading-hui.azurewebsites.net"
 
 
+def send_daily_brief(swing_setups, lt_opportunities, settings):
+    """Send the 6pm SGT daily brief email."""
+    sender   = Config.EMAIL_SENDER
+    password = Config.EMAIL_PASSWORD
+    recipient = settings.get("email", Config.EMAIL_SENDER)
+    if not sender or not password or not recipient:
+        print("Email not configured — skipping daily brief")
+        return False
+
+    account = settings.get("account_size", 20000)
+    weekly  = settings.get("weekly_target", 1500)
+    risk    = settings.get("swing_risk", 2)
+
+    swing_tickers = [f"{s['ticker']} {s['score']}" for s in swing_setups[:3]]
+    lt_tickers    = [s["ticker"] for s in lt_opportunities[:2]]
+    subject = "🚨 Swing: " + " | ".join(swing_tickers)
+    if lt_tickers:
+        subject += " | LT: " + " | ".join(lt_tickers)
+
+    def setup_row(s, mode):
+        uw = ", ".join(s.get("uw_notes", [])[:2]) or "No UW data"
+        stop   = s.get("stop_swing" if mode == "SWING" else "stop_lt", "?")
+        target = s.get("target_swing" if mode == "SWING" else "target_lt", "?")
+        return (
+            f'<tr style="border-bottom:1px solid #1F2535">'
+            f'<td style="padding:10px 0;font-family:monospace;font-size:18px;font-weight:700;color:#F97316">{s["ticker"]}</td>'
+            f'<td style="padding:10px 0;font-size:13px;color:#22C55E;font-weight:700">{s["score"]}/100</td>'
+            f'<td style="padding:10px 0;font-size:12px;color:#C8D8F0">${s["price"]:.2f}</td>'
+            f'<td style="padding:10px 0;font-size:11px;color:#8898B8">${stop} → ${target}<br><span style="color:#6B7280">{uw}</span></td>'
+            f'</tr>'
+        )
+
+    swing_rows = "".join(setup_row(s, "SWING") for s in swing_setups[:5])
+    lt_rows    = "".join(setup_row(s, "LONG-TERM") for s in lt_opportunities[:3])
+
+    html = f"""<!DOCTYPE html><html><head><meta charset="UTF-8"></head>
+<body style="margin:0;padding:0;background:#0A0A0A;font-family:Arial,sans-serif">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#0A0A0A;padding:24px 0">
+<tr><td align="center">
+<table width="600" cellpadding="0" cellspacing="0" style="background:#111;border:1px solid #222;border-radius:12px;overflow:hidden;max-width:600px">
+  <tr><td style="background:linear-gradient(90deg,#F97316,#EA580C);padding:4px 0"></td></tr>
+  <tr><td style="padding:24px 28px;border-bottom:1px solid #1F2535">
+    <div style="font-family:monospace;font-size:10px;color:#6B7280;letter-spacing:2px">SG TRADING · DAILY BRIEF · {datetime.utcnow().strftime('%B %d, %Y 6pm SGT')}</div>
+    <div style="font-size:22px;font-weight:700;color:#F97316;margin-top:6px">Today's Setups</div>
+  </td></tr>
+  <tr><td style="padding:20px 28px;border-bottom:1px solid #1F2535">
+    <div style="font-family:monospace;font-size:10px;color:#F97316;letter-spacing:2px;margin-bottom:12px">🎯 SWING SETUPS</div>
+    {'<table width="100%" cellpadding="0" cellspacing="0">' + swing_rows + '</table>' if swing_setups else '<div style="color:#6B7280;font-size:13px">No strong setups today — stay patient.</div>'}
+  </td></tr>
+  <tr><td style="padding:20px 28px;border-bottom:1px solid #1F2535">
+    <div style="font-family:monospace;font-size:10px;color:#3B82F6;letter-spacing:2px;margin-bottom:12px">💎 LONG-TERM OPPORTUNITIES</div>
+    {'<table width="100%" cellpadding="0" cellspacing="0">' + lt_rows + '</table>' if lt_opportunities else '<div style="color:#6B7280;font-size:13px">No new LT opportunities today.</div>'}
+  </td></tr>
+  <tr><td style="padding:16px 28px;text-align:center;border-bottom:1px solid #1F2535">
+    <a href="{APP_URL}/scan" style="display:inline-block;background:#F97316;color:#000;font-family:monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;text-decoration:none;padding:10px 28px;border-radius:8px">VIEW DASHBOARD →</a>
+  </td></tr>
+  <tr><td style="padding:14px 28px;text-align:center">
+    <div style="font-size:11px;color:#5A6E88">Account ${account:,} · Risk {risk}% · Target ${weekly:,}/wk · Not financial advice</div>
+  </td></tr>
+</table></td></tr></table></body></html>"""
+
+    ok, err = _send_one(subject, html, recipient)
+    if ok:
+        print(f"✓ Daily brief sent to {recipient}")
+    else:
+        print(f"✗ Email failed: {err}")
+    return ok
+
+
 def _alert_html(stock):
     level       = stock.get('alert_level', 'IMMINENT')
     level_color = '#FF3D5A' if level == 'IMMINENT' else '#FFB300' if level == 'WATCH' else '#00E5FF'

@@ -1,179 +1,159 @@
-from flask import Blueprint, request, jsonify
-import anthropic
-import finnhub
-from config import Config
-from datetime import datetime
+"""Tab 1: Scanner — daily 6-layer scan + manual trigger."""
 
-scanner_bp = Blueprint('scanner', __name__)
+import time
+import threading
+from flask import Blueprint, jsonify, request, render_template
+from models.journal import get_latest_scan, save_scan_results, get_settings
+from utils.tickers import get_scan_universe
+from utils.analysis_engine import quick_score, run_full_analysis
+from utils.position_calc import calc_swing_setup, calc_lt_setup
 
-last_scan_cache = {}
+scanner_bp = Blueprint("scanner", __name__)
 
-# Tool schema used to force structured output on the second API call.
-# tool_choice={"type":"tool"} guarantees block.input is valid JSON — no text parsing.
-_REPORT_TOOL = {
-    "name": "submit_market_report",
-    "description": "Submit the final structured market report",
-    "input_schema": {
-        "type": "object",
-        "required": ["sentiment", "macro", "stocks", "events"],
-        "properties": {
-            "sentiment": {
-                "type": "object",
-                "required": ["score", "label", "sublabel", "summary", "flags"],
-                "properties": {
-                    "score":    {"type": "number"},
-                    "label":    {"type": "string"},
-                    "sublabel": {"type": "string"},
-                    "summary":  {"type": "string"},
-                    "flags": {
-                        "type": "array",
-                        "items": {
-                            "type": "object",
-                            "properties": {
-                                "text": {"type": "string"},
-                                "type": {"type": "string"}
-                            }
-                        }
-                    }
-                }
-            },
-            "macro": {
-                "type": "object",
-                "required": ["vix", "fear_greed", "scenario", "scenario_name", "action"],
-                "properties": {
-                    "vix":           {"type": "string"},
-                    "fear_greed":    {"type": "string"},
-                    "scenario":      {"type": "string"},
-                    "scenario_name": {"type": "string"},
-                    "action":        {"type": "string"}
-                }
-            },
-            "stocks": {
-                "type": "array",
-                "items": {
-                    "type": "object",
-                    "properties": {
-                        "ticker":     {"type": "string"},
-                        "name":       {"type": "string"},
-                        "signal":     {"type": "string"},
-                        "conviction": {"type": "string"},
-                        "reason":     {"type": "string"},
-                        "tags":       {"type": "array", "items": {"type": "string"}}
-                    }
-                }
-            },
-            "events": {
-                "type": "array",
-                "items": {
-                    "type": "object",
-                    "properties": {
-                        "time":   {"type": "string"},
-                        "impact": {"type": "string"},
-                        "title":  {"type": "string"},
-                        "detail": {"type": "string"}
-                    }
-                }
-            }
-        }
-    }
-}
+_scan_running = False
+_scan_progress = {"status": "idle", "done": 0, "total": 0, "phase": ""}
 
 
-@scanner_bp.route('/scanner', methods=['GET'])
-def get_market_scan():
-    region = request.args.get('region', 'US')
-    force  = request.args.get('force', 'false').lower() == 'true'
+@scanner_bp.route("/scan")
+def scan_page():
+    return render_template("scanner.html")
 
-    cache_key = f"scan_{region}"
-    if not force and cache_key in last_scan_cache:
-        cached = last_scan_cache[cache_key]
-        cached['from_cache'] = True
-        return jsonify(cached)
 
-    if not Config.ANTHROPIC_API_KEY:
-        return jsonify({"error": "ANTHROPIC_API_KEY not configured"}), 500
+@scanner_bp.route("/api/scan/results")
+def scan_results():
+    rows  = get_latest_scan()
+    swing = [r for r in rows if r.get("mode_tag") == "SWING"]
+    lt    = [r for r in rows if r.get("mode_tag") == "LONG-TERM"]
+    return jsonify({
+        "swing":     swing,
+        "long_term": lt,
+        "scan_date": rows[0]["scan_date"] if rows else None,
+        "count":     len(rows),
+    })
+
+
+@scanner_bp.route("/api/scan/progress")
+def scan_progress():
+    return jsonify(_scan_progress)
+
+
+@scanner_bp.route("/api/scan/run", methods=["POST"])
+def trigger_scan():
+    global _scan_running
+    if _scan_running:
+        return jsonify({"error": "Scan already running"}), 409
+    thread = threading.Thread(target=run_scan_job, daemon=True)
+    thread.start()
+    return jsonify({"message": "Scan started"})
+
+
+def run_scan_job():
+    """Full 6-layer scan. Called by scheduler and manual trigger."""
+    global _scan_running, _scan_progress
+    _scan_running = True
+    _scan_progress = {"status": "running", "done": 0, "total": 0, "phase": "Loading tickers"}
 
     try:
-        ac    = anthropic.Anthropic(api_key=Config.ANTHROPIC_API_KEY)
-        today = datetime.now().strftime('%A, %B %d, %Y')
+        settings = get_settings()
+        account  = settings.get("account_size", 20000)
+        risk     = settings.get("swing_risk", 2.0)
+        lt_pos   = settings.get("lt_position", 7.5)
 
-        # ── Call 1: web research ──────────────────────────────────────────
-        research_prompt = (
-            f"Today is {today} SGT. You are a professional market analyst in Singapore. "
-            f"Search the web for live {region} market data and write a concise analyst summary covering: "
-            "current market sentiment score (0-100) and label, VIX level, CNN Fear & Greed index, "
-            "the market scenario (1=normal correction, 2=panic, 3=extreme panic, 4=systemic risk, 5=euphoria), "
-            "5-7 stocks worth watching today with signal and reason, "
-            "and 4-6 key economic events today. Use real current numbers."
-        )
+        universe = get_scan_universe()
+        _scan_progress["total"] = len(universe)
+        _scan_progress["phase"] = "Quick scan (layers 1-4)"
+
+        # Phase 1: quick 4-layer scan
+        quick_results = []
+        for i, ticker in enumerate(universe):
+            try:
+                q = quick_score(ticker)
+                quick_results.append(q)
+                time.sleep(0.05)
+            except Exception:
+                pass
+            _scan_progress["done"] = i + 1
+
+        # Keep top 40 by 4-layer score
+        candidates = [r for r in quick_results if r.get("score4", 0) >= 55]
+        candidates.sort(key=lambda x: x.get("score4", 0), reverse=True)
+        candidates = candidates[:40]
+
+        _scan_progress["phase"] = f"Deep scan on {len(candidates)} candidates"
+        _scan_progress["done"]  = 0
+        _scan_progress["total"] = len(candidates)
+
+        # Phase 2: full 6-layer + UW
+        final_results = []
+        for i, cand in enumerate(candidates):
+            ticker = cand["ticker"]
+            try:
+                full   = run_full_analysis(ticker, "SWING")
+                score  = full["score"]
+                price  = full["price"]
+                layers = full["layers"]
+                fund   = full.get("fundamentals", {})
+
+                trend_score = layers["trend"]["score"]
+                rev_growth  = fund.get("revenue_growth") or 0
+                is_lt = (trend_score >= 18 and rev_growth >= 0.15 and score >= 65)
+                mode_tag = "LONG-TERM" if is_lt else "SWING"
+
+                atr = full["technicals"].get("atr")
+                if mode_tag == "SWING":
+                    ps = calc_swing_setup(price, atr, account, risk)
+                else:
+                    ps = calc_lt_setup(price, atr, account, lt_pos)
+
+                uw = layers["smart_money"]
+                final_results.append({
+                    "ticker":   ticker,
+                    "score":    score,
+                    "verdict":  full["verdict"],
+                    "mode_tag": mode_tag,
+                    "price":    price,
+                    "rsi":      full["technicals"].get("rsi"),
+                    "ema20":    full["technicals"].get("ema20"),
+                    "stop":     ps.get("stop"),
+                    "target":   ps.get("target"),
+                    "shares":   ps.get("shares", 0),
+                    "uw_notes": uw.get("notes", []),
+                    "uw_score": uw.get("score", 0),
+                    "layers":   {
+                        "trend":     layers["trend"]["score"],
+                        "momentum":  layers["momentum"]["score"],
+                        "volume":    layers["volume"]["score"],
+                        "structure": layers["structure"]["score"],
+                        "catalyst":  layers["catalyst"]["score"],
+                        "sm":        uw.get("score", 0),
+                    }
+                })
+            except Exception as e:
+                print(f"Scan error {ticker}: {e}")
+
+            _scan_progress["done"] = i + 1
+            time.sleep(0.2)
+
+        final_results.sort(key=lambda x: x["score"], reverse=True)
+        save_scan_results(final_results)
+
+        _scan_progress = {
+            "status": "done",
+            "done": len(final_results),
+            "total": len(final_results),
+            "phase": "Complete"
+        }
 
         try:
-            msg1 = ac.messages.create(
-                model="claude-haiku-4-5-20251001",
-                max_tokens=2000,
-                tools=[{"type": "web_search_20250305", "name": "web_search", "max_uses": 3}],
-                messages=[{"role": "user", "content": research_prompt}]
-            )
+            from utils.emailer import send_daily_brief
+            swing_r = [r for r in final_results if r["mode_tag"] == "SWING" and r["score"] >= 70]
+            lt_r    = [r for r in final_results if r["mode_tag"] == "LONG-TERM" and r["score"] >= 65]
+            send_daily_brief(swing_r[:5], lt_r[:3], settings)
         except Exception as e:
-            return jsonify({"error": f"call1_research: {e}"}), 500
-
-        research = "".join(
-            block.text for block in msg1.content if hasattr(block, 'text')
-        ).strip()
-
-        if not research:
-            return jsonify({"error": "No market data returned from research"}), 500
-
-        # ── Call 2: force structured output via tool_use ──────────────────
-        # Haiku used for both calls so the app never touches the Sonnet quota
-        # (shared with Claude Code). Haiku generates valid JSON under tool_choice.
-        try:
-            msg2 = ac.messages.create(
-                model="claude-haiku-4-5-20251001",
-                max_tokens=2000,
-                tools=[_REPORT_TOOL],
-                tool_choice={"type": "tool", "name": "submit_market_report"},
-                messages=[{
-                    "role": "user",
-                    "content": (
-                        f"Based on this market research, call submit_market_report "
-                        f"with all fields populated:\n\n{research}"
-                    )
-                }]
-            )
-        except Exception as e:
-            return jsonify({"error": f"call2_structure: {e}"}), 500
-
-        data = None
-        for block in msg2.content:
-            if getattr(block, 'type', None) == 'tool_use':
-                data = block.input
-                break
-
-        if not data:
-            return jsonify({"error": "Structured output not returned"}), 500
-
-        data['timestamp']  = datetime.now().isoformat()
-        data['region']     = region
-        data['from_cache'] = False
-
-        last_scan_cache[cache_key] = data
-        return jsonify(data)
+            print(f"Email error: {e}")
 
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-
-@scanner_bp.route('/scanner/version', methods=['GET'])
-def scanner_version():
-    import anthropic as _ac
-    return jsonify({"scanner_version": "two-call-v2", "anthropic_sdk": _ac.__version__})
-
-
-@scanner_bp.route('/scanner/last', methods=['GET'])
-def get_last_scan():
-    region    = request.args.get('region', 'US')
-    cache_key = f"scan_{region}"
-    if cache_key in last_scan_cache:
-        return jsonify(last_scan_cache[cache_key])
-    return jsonify({"error": "No scan available yet. Run a scan first."}), 404
+        _scan_progress = {"status": "error", "error": str(e), "phase": "Failed"}
+        print(f"Scan job error: {e}")
+    finally:
+        _scan_running = False

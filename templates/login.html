@@ -4,97 +4,177 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>SG Trading — Sign In</title>
-<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500;600&family=DM+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500;600;700&family=DM+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
 :root {
-  --bg:#08090C;--bg2:#0D0F14;--bg3:#12151C;--bg4:#181C26;
-  --border:#1F2535;--border2:#2A3348;
-  --text:#C8D8F0;--text-dim:#8898B8;--text-muted:#5A6E88;
-  --cyan:#00E5FF;--cyan2:#00A8CC;--green:#00E676;--red:#FF3D5A;
+  --bg:#0A0A0A; --bg2:#111; --bg3:#181818; --bg4:#1F1F1F;
+  --border:#222; --border2:#2A2A2A;
+  --text:#E8E8E8; --text-dim:#A0A0A0; --text-muted:#555;
+  --orange:#F97316; --orange2:#EA580C;
+  --green:#22C55E; --red:#EF4444;
 }
-*{box-sizing:border-box;margin:0;padding:0;}
-body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;font-weight:500;line-height:1.6;letter-spacing:0.01em;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px;}
-body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(rgba(0,229,255,0.03) 1px,transparent 1px),linear-gradient(90deg,rgba(0,229,255,0.03) 1px,transparent 1px);background-size:40px 40px;pointer-events:none;}
-
-.card{background:var(--bg2);border:1px solid var(--border);border-radius:16px;padding:40px 36px;width:100%;max-width:420px;position:relative;overflow:hidden;}
-.card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,var(--cyan2),var(--cyan),#BB86FC);}
-
-.logo{font-family:'DM Mono',monospace;font-size:22px;font-weight:600;text-align:center;margin-bottom:6px;}
-.logo span{color:var(--cyan);}
-.tagline{font-family:'DM Mono',monospace;font-size:11px;font-weight:500;color:var(--text-muted);text-align:center;letter-spacing:.2em;text-transform:uppercase;margin-bottom:32px;}
-
-/* Tabs */
-.auth-tabs{display:flex;background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:3px;margin-bottom:24px;}
-.auth-tab{flex:1;padding:8px;text-align:center;font-family:'DM Mono',monospace;font-size:12px;font-weight:500;letter-spacing:.08em;cursor:pointer;border-radius:6px;border:none;background:transparent;color:var(--text-muted);transition:all .2s;}
-.auth-tab.active{background:var(--bg4);color:var(--cyan);border:1px solid var(--border2);font-weight:700;}
-
-/* Google button */
-.btn-google{width:100%;padding:13px;background:#fff;color:#1a1a1a;border:none;border-radius:8px;font-family:'DM Sans',sans-serif;font-size:14px;font-weight:600;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:10px;transition:all .2s;margin-bottom:16px;}
-.btn-google:hover{background:#f0f0f0;transform:translateY(-1px);}
-.google-icon{width:18px;height:18px;}
-
-/* Divider */
-.divider{display:flex;align-items:center;gap:12px;margin-bottom:16px;}
-.divider-line{flex:1;height:1px;background:var(--border);}
-.divider-text{font-family:'DM Mono',monospace;font-size:11px;font-weight:500;color:var(--text-muted);letter-spacing:.1em;}
-
-/* Form */
-.form-group{margin-bottom:14px;}
-.form-label{font-family:'DM Mono',monospace;font-size:11px;font-weight:600;letter-spacing:.14em;color:var(--text-dim);text-transform:uppercase;display:block;margin-bottom:6px;}
-.form-input{width:100%;background:var(--bg3);border:1px solid var(--border2);border-radius:8px;color:var(--text);font-family:'DM Sans',sans-serif;font-size:14px;padding:12px 14px;outline:none;transition:border-color .2s;}
-.form-input:focus{border-color:var(--cyan2);}
-.form-input::placeholder{color:var(--text-muted);}
-
-/* Submit button */
-.btn-primary{width:100%;padding:13px;background:var(--cyan);color:var(--bg);border:none;border-radius:8px;font-family:'DM Mono',monospace;font-size:13px;font-weight:700;letter-spacing:.1em;cursor:pointer;transition:all .2s;margin-top:4px;}
-.btn-primary:hover{background:#33EEFF;transform:translateY(-1px);}
-.btn-primary:disabled{background:var(--bg4);color:var(--text-muted);cursor:not-allowed;transform:none;}
-
-/* Error / success */
-.msg{padding:10px 14px;border-radius:7px;font-size:13px;margin-bottom:14px;display:none;}
-.msg.show{display:block;}
-.msg.error{background:rgba(255,61,90,.1);border:1px solid rgba(255,61,90,.25);color:var(--red);}
-.msg.success{background:rgba(0,230,118,.1);border:1px solid rgba(0,230,118,.25);color:var(--green);}
-
-/* Footer */
-.auth-footer{text-align:center;margin-top:20px;font-size:13px;color:var(--text-muted);}
-
-/* Password strength */
-.pwd-strength{height:3px;border-radius:2px;margin-top:6px;transition:all .3s;background:var(--border);}
-.pwd-strength.weak{background:var(--red);width:33%;}
-.pwd-strength.medium{background:var(--amber);width:66%;}
-.pwd-strength.strong{background:var(--green);width:100%;}
-.pwd-label{font-family:'DM Mono',monospace;font-size:10px;font-weight:500;color:var(--text-muted);margin-top:3px;}
-
-/* Loading spinner */
-.spinner{display:inline-block;width:14px;height:14px;border:2px solid rgba(8,9,12,.3);border-top:2px solid var(--bg);border-radius:50%;animation:spin .8s linear infinite;margin-right:6px;}
-@keyframes spin{to{transform:rotate(360deg);}}
-
-/* URL param error */
-.url-error{background:rgba(255,61,90,.1);border:1px solid rgba(255,61,90,.2);border-radius:7px;padding:10px 14px;font-size:12px;color:var(--red);margin-bottom:14px;}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'DM Sans', sans-serif;
+  font-weight: 500;
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+.card {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 36px 32px;
+  width: 100%;
+  max-width: 400px;
+  position: relative;
+  overflow: hidden;
+}
+.card::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, var(--orange2), var(--orange));
+}
+.logo {
+  font-family: 'DM Mono', monospace;
+  font-size: 22px;
+  font-weight: 700;
+  text-align: center;
+  margin-bottom: 4px;
+}
+.logo span { color: var(--orange); }
+.tagline {
+  font-family: 'DM Mono', monospace;
+  font-size: 10px;
+  color: var(--text-muted);
+  text-align: center;
+  letter-spacing: .2em;
+  text-transform: uppercase;
+  margin-bottom: 28px;
+}
+.auth-tabs {
+  display: flex;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 3px;
+  margin-bottom: 20px;
+  gap: 2px;
+}
+.auth-tab {
+  flex: 1;
+  padding: 7px;
+  text-align: center;
+  font-family: 'DM Mono', monospace;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .08em;
+  cursor: pointer;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  transition: all .15s;
+}
+.auth-tab.active {
+  background: var(--bg4);
+  color: var(--orange);
+  font-weight: 700;
+}
+.btn-google {
+  width: 100%;
+  padding: 11px;
+  background: #fff;
+  color: #1a1a1a;
+  border: none;
+  border-radius: 8px;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  transition: background .15s;
+  margin-bottom: 14px;
+}
+.btn-google:hover { background: #f0f0f0; }
+.divider { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+.divider-line { flex: 1; height: 1px; background: var(--border); }
+.divider-text { font-size: 11px; color: var(--text-muted); font-family: 'DM Mono', monospace; }
+.form-group { margin-bottom: 12px; }
+.form-label { display: block; font-size: 10px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: var(--text-dim); margin-bottom: 5px; }
+.form-input {
+  width: 100%;
+  background: var(--bg3);
+  border: 1px solid var(--border2);
+  border-radius: 8px;
+  color: var(--text);
+  font-family: 'DM Sans', sans-serif;
+  font-size: 14px;
+  padding: 10px 12px;
+  outline: none;
+  transition: border-color .2s;
+}
+.form-input:focus { border-color: var(--orange); }
+.form-input::placeholder { color: var(--text-muted); }
+.btn-primary {
+  width: 100%;
+  padding: 11px;
+  background: var(--orange);
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  font-family: 'DM Mono', monospace;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: .1em;
+  cursor: pointer;
+  transition: background .15s;
+  margin-top: 2px;
+}
+.btn-primary:hover { background: var(--orange2); }
+.btn-primary:disabled { opacity: .4; cursor: not-allowed; }
+.msg { padding: 9px 12px; border-radius: 7px; font-size: 13px; margin-bottom: 12px; display: none; }
+.msg.show { display: block; }
+.msg.error { background: rgba(239,68,68,.08); border: 1px solid rgba(239,68,68,.2); color: var(--red); }
+.msg.success { background: rgba(34,197,94,.08); border: 1px solid rgba(34,197,94,.2); color: var(--green); }
+.auth-footer { text-align: center; margin-top: 18px; font-size: 12px; color: var(--text-muted); }
+.auth-footer span { color: var(--orange); font-size: 10px; display: block; margin-top: 4px; }
+.pwd-bar { height: 3px; border-radius: 2px; margin-top: 5px; background: var(--border); transition: all .3s; }
+.pwd-bar.weak { background: var(--red); width: 33%; }
+.pwd-bar.medium { background: var(--yellow); width: 66%; }
+.pwd-bar.strong { background: var(--green); width: 100%; }
+.spinner { display: inline-block; width: 12px; height: 12px; border: 2px solid rgba(255,255,255,.2); border-top-color: #fff; border-radius: 50%; animation: spin .7s linear infinite; margin-right: 6px; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.url-error { background: rgba(239,68,68,.08); border: 1px solid rgba(239,68,68,.2); border-radius: 7px; padding: 9px 12px; font-size: 12px; color: var(--red); margin-bottom: 12px; }
 </style>
 </head>
 <body>
 <div class="card">
   <div class="logo">SG<span>.</span>TRADING</div>
-  <div class="tagline">Process-first · AI-elevated</div>
+  <div class="tagline">Process-first · AI-elevated · Disciplined</div>
 
-  <!-- URL error (e.g. from Google callback) -->
   <div id="urlError" class="url-error" style="display:none"></div>
 
-  <!-- Auth tabs -->
   <div class="auth-tabs">
     <button class="auth-tab active" onclick="switchAuth('login')" id="tabLogin">Sign In</button>
     <button class="auth-tab" onclick="switchAuth('signup')" id="tabSignup">Sign Up</button>
   </div>
 
-  <!-- Error / success messages -->
   <div class="msg error" id="errMsg"></div>
   <div class="msg success" id="sucMsg"></div>
 
-  <!-- Google button -->
   <button class="btn-google" onclick="googleLogin()">
-    <svg class="google-icon" viewBox="0 0 24 24">
+    <svg width="18" height="18" viewBox="0 0 24 24">
       <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
       <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
       <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
@@ -109,7 +189,6 @@ body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(
     <div class="divider-line"></div>
   </div>
 
-  <!-- LOGIN FORM -->
   <div id="formLogin">
     <div class="form-group">
       <label class="form-label">Email</label>
@@ -117,12 +196,12 @@ body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(
     </div>
     <div class="form-group">
       <label class="form-label">Password</label>
-      <input class="form-input" id="loginPwd" type="password" placeholder="••••••••" onkeydown="if(event.key==='Enter')submitLogin()">
+      <input class="form-input" id="loginPwd" type="password" placeholder="••••••••"
+             onkeydown="if(event.key==='Enter')submitLogin()">
     </div>
     <button class="btn-primary" id="loginBtn" onclick="submitLogin()">SIGN IN</button>
   </div>
 
-  <!-- SIGNUP FORM -->
   <div id="formSignup" style="display:none">
     <div class="form-group">
       <label class="form-label">Full Name</label>
@@ -134,132 +213,104 @@ body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(
     </div>
     <div class="form-group">
       <label class="form-label">Password</label>
-      <input class="form-input" id="signupPwd" type="password" placeholder="Min 8 characters" oninput="checkPwd(this.value)">
-      <div class="pwd-strength" id="pwdBar"></div>
-      <div class="pwd-label" id="pwdLabel"></div>
+      <input class="form-input" id="signupPwd" type="password" placeholder="Min 8 characters"
+             oninput="checkPwd(this.value)">
+      <div class="pwd-bar" id="pwdBar"></div>
     </div>
     <button class="btn-primary" id="signupBtn" onclick="submitSignup()">CREATE ACCOUNT</button>
   </div>
 
   <div class="auth-footer">
-    By signing in you agree to use this platform responsibly.<br>
-    <span style="color:var(--cyan);font-size:11px">Not financial advice.</span>
+    By signing in you agree to use this responsibly.
+    <span>Not financial advice. Trade your plan.</span>
   </div>
 </div>
 
 <script>
-// Check URL for errors from Google callback
 const params = new URLSearchParams(window.location.search);
 const urlErr = params.get('error');
 if (urlErr) {
   const msgs = {
     google_cancelled: 'Google sign-in was cancelled.',
-    google_token_failed: 'Google authentication failed. Please try again.',
+    google_token_failed: 'Google authentication failed.',
     google_userinfo_failed: 'Could not retrieve Google account info.',
-    account_creation_failed: 'Could not create account. Please try email signup.'
+    account_creation_failed: 'Could not create account. Try email signup.'
   };
   const el = document.getElementById('urlError');
-  el.textContent = msgs[urlErr] || 'Authentication error. Please try again.';
+  el.textContent = msgs[urlErr] || 'Authentication error.';
   el.style.display = 'block';
 }
 
 function switchAuth(mode) {
   document.getElementById('tabLogin').classList.toggle('active', mode==='login');
   document.getElementById('tabSignup').classList.toggle('active', mode==='signup');
-  document.getElementById('formLogin').style.display  = mode==='login'  ? 'block' : 'none';
-  document.getElementById('formSignup').style.display = mode==='signup' ? 'block' : 'none';
+  document.getElementById('formLogin').style.display  = mode==='login'  ? '' : 'none';
+  document.getElementById('formSignup').style.display = mode==='signup' ? '' : 'none';
   clearMsgs();
 }
-
 function clearMsgs() {
   document.getElementById('errMsg').classList.remove('show');
   document.getElementById('sucMsg').classList.remove('show');
 }
-
 function showErr(msg) {
   const el = document.getElementById('errMsg');
   el.textContent = msg; el.classList.add('show');
   document.getElementById('sucMsg').classList.remove('show');
 }
-
 function showSuc(msg) {
   const el = document.getElementById('sucMsg');
   el.textContent = msg; el.classList.add('show');
   document.getElementById('errMsg').classList.remove('show');
 }
-
-function setLoading(btnId, loading, defaultText) {
-  const btn = document.getElementById(btnId);
-  btn.disabled = loading;
-  btn.innerHTML = loading
-    ? `<span class="spinner"></span>Please wait...`
-    : defaultText;
-}
-
 function checkPwd(val) {
   const bar = document.getElementById('pwdBar');
-  const lbl = document.getElementById('pwdLabel');
-  if (!val) { bar.className='pwd-strength'; lbl.textContent=''; return; }
+  if (!val) { bar.className = 'pwd-bar'; return; }
   const strong = val.length >= 10 && /[A-Z]/.test(val) && /[0-9]/.test(val);
-  const medium = val.length >= 8;
-  if (strong) { bar.className='pwd-strength strong'; lbl.textContent='Strong'; }
-  else if (medium) { bar.className='pwd-strength medium'; lbl.textContent='Medium'; }
-  else { bar.className='pwd-strength weak'; lbl.textContent='Too short'; }
+  bar.className = 'pwd-bar ' + (strong ? 'strong' : val.length >= 8 ? 'medium' : 'weak');
 }
-
 async function submitLogin() {
   const email = document.getElementById('loginEmail').value.trim();
   const pwd   = document.getElementById('loginPwd').value;
   if (!email || !pwd) { showErr('Please enter email and password.'); return; }
-
-  setLoading('loginBtn', true, 'SIGN IN');
+  const btn = document.getElementById('loginBtn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span>Signing in...';
   clearMsgs();
   try {
-    const res  = await fetch('/auth/login', {
-      method: 'POST',
-      headers: {'Content-Type':'application/json'},
+    const r = await fetch('/auth/login', {
+      method:'POST', headers:{'Content-Type':'application/json'},
       body: JSON.stringify({email, password: pwd})
     });
-    const data = await res.json();
-    if (data.error) { showErr(data.error); return; }
-    showSuc('Welcome back, ' + data.user.name + '! Redirecting...');
-    setTimeout(() => window.location.href = '/dashboard', 800);
-  } catch(e) {
-    showErr('Connection error. Please try again.');
-  } finally {
-    setLoading('loginBtn', false, 'SIGN IN');
-  }
+    const d = await r.json();
+    if (d.error) { showErr(d.error); return; }
+    showSuc('Welcome back, ' + d.user.name + '!');
+    setTimeout(() => window.location.href = '/scan', 700);
+  } catch(e) { showErr('Connection error.'); }
+  finally { btn.disabled=false; btn.innerHTML='SIGN IN'; }
 }
-
 async function submitSignup() {
   const name  = document.getElementById('signupName').value.trim();
   const email = document.getElementById('signupEmail').value.trim();
   const pwd   = document.getElementById('signupPwd').value;
-  if (!name || !email || !pwd) { showErr('Please fill in all fields.'); return; }
+  if (!name || !email || !pwd) { showErr('Fill in all fields.'); return; }
   if (pwd.length < 8) { showErr('Password must be at least 8 characters.'); return; }
-
-  setLoading('signupBtn', true, 'CREATE ACCOUNT');
+  const btn = document.getElementById('signupBtn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span>Creating...';
   clearMsgs();
   try {
-    const res  = await fetch('/auth/signup', {
-      method: 'POST',
-      headers: {'Content-Type':'application/json'},
+    const r = await fetch('/auth/signup', {
+      method:'POST', headers:{'Content-Type':'application/json'},
       body: JSON.stringify({name, email, password: pwd})
     });
-    const data = await res.json();
-    if (data.error) { showErr(data.error); return; }
-    showSuc('Account created! Welcome, ' + data.user.name + '! Redirecting...');
-    setTimeout(() => window.location.href = '/dashboard', 800);
-  } catch(e) {
-    showErr('Connection error. Please try again.');
-  } finally {
-    setLoading('signupBtn', false, 'CREATE ACCOUNT');
-  }
+    const d = await r.json();
+    if (d.error) { showErr(d.error); return; }
+    showSuc('Welcome, ' + d.user.name + '!');
+    setTimeout(() => window.location.href = '/scan', 700);
+  } catch(e) { showErr('Connection error.'); }
+  finally { btn.disabled=false; btn.innerHTML='CREATE ACCOUNT'; }
 }
-
-function googleLogin() {
-  window.location.href = '/auth/google';
-}
+function googleLogin() { window.location.href = '/auth/google'; }
 </script>
 </body>
 </html>

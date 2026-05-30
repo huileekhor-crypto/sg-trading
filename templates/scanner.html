@@ -1,0 +1,218 @@
+{% extends "base.html" %}
+{% set active = "scan" %}
+{% block title %}Scan — SG Trading{% endblock %}
+
+{% block extra_css %}
+<style>
+.scan-card {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px;
+  margin-bottom: 10px;
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+  cursor: pointer;
+  transition: border-color .15s;
+  text-decoration: none;
+  color: var(--text);
+}
+.scan-card:hover { border-color: #333; }
+.scan-card-body { flex: 1; min-width: 0; }
+.scan-row1 { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; flex-wrap: wrap; }
+.scan-ticker { font-family: 'DM Mono', monospace; font-size: 18px; font-weight: 800; }
+.scan-price-line { font-family: 'DM Mono', monospace; font-size: 12px; color: var(--text-dim); margin-bottom: 6px; }
+.scan-uw { font-size: 11px; color: var(--text-muted); margin-top: 4px; }
+.scan-uw.has-uw { color: var(--green); }
+.scan-setup { font-size: 11px; color: var(--text-dim); }
+.mini-bars { display: flex; gap: 3px; margin-top: 6px; }
+.mini-bar {
+  height: 20px;
+  border-radius: 3px;
+  display: flex;
+  align-items: flex-end;
+  background: var(--bg4);
+  overflow: hidden;
+  position: relative;
+  flex: 1;
+}
+.mini-bar-fill {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: var(--orange);
+  border-radius: 3px;
+  opacity: .7;
+}
+.progress-bar {
+  height: 4px;
+  background: var(--bg4);
+  border-radius: 2px;
+  margin: 8px 0;
+  overflow: hidden;
+}
+.progress-bar-fill {
+  height: 100%;
+  background: var(--orange);
+  border-radius: 2px;
+  transition: width .3s;
+}
+.scan-status { font-size: 12px; color: var(--text-muted); }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="section-header" style="margin-bottom:16px">
+  <div>
+    <div style="font-size:18px;font-weight:800;margin-bottom:2px">Daily Scan</div>
+    <div style="font-size:11px;color:var(--text-muted)" id="scanDate">Auto-runs 6pm SGT</div>
+  </div>
+  <button class="btn btn-ghost btn-sm" onclick="triggerScan()" id="scanBtn">🔄 Scan Now</button>
+</div>
+
+<!-- Progress bar (hidden by default) -->
+<div id="scanProgress" style="display:none;margin-bottom:16px">
+  <div class="card">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+      <span style="font-size:12px;font-weight:700" id="scanPhase">Scanning...</span>
+      <span style="font-size:11px;color:var(--text-muted)" id="scanPct">0%</span>
+    </div>
+    <div class="progress-bar"><div class="progress-bar-fill" id="scanFill" style="width:0%"></div></div>
+  </div>
+</div>
+
+<!-- SWING section -->
+<div class="section-header">
+  <div class="section-title">🎯 Swing Setups</div>
+  <span id="swingCount" class="badge badge-swing">0</span>
+</div>
+<div id="swingList">
+  <div class="empty-state">
+    <div class="icon">🔍</div>
+    <div class="msg">No scan results yet.<br>Tap "Scan Now" or wait for 6pm SGT.</div>
+  </div>
+</div>
+
+<div style="height:20px"></div>
+
+<!-- LONG-TERM section -->
+<div class="section-header" style="margin-top:8px">
+  <div class="section-title">💎 Long-Term Opportunities</div>
+  <span id="ltCount" class="badge badge-lt">0</span>
+</div>
+<div id="ltList">
+  <div class="empty-state">
+    <div class="icon">💎</div>
+    <div class="msg">Quality names on pullback will appear here.</div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let pollTimer = null;
+
+async function loadResults() {
+  const d = await api('/api/scan/results');
+  if (!d) return;
+
+  document.getElementById('scanDate').textContent =
+    d.scan_date ? 'Scanned ' + d.scan_date : 'Auto-runs 6pm SGT';
+  document.getElementById('swingCount').textContent = d.swing.length;
+  document.getElementById('ltCount').textContent = d.long_term.length;
+
+  renderList('swingList', d.swing, 'SWING');
+  renderList('ltList', d.long_term, 'LONG-TERM');
+}
+
+function renderList(elId, items, mode) {
+  const el = document.getElementById(elId);
+  if (!items || !items.length) {
+    el.innerHTML = '<div class="empty-state"><div class="icon">' +
+      (mode==='SWING'?'🔍':'💎') +
+      '</div><div class="msg">No setups found yet.</div></div>';
+    return;
+  }
+
+  el.innerHTML = items.map(s => {
+    const vc    = s.verdict ? s.verdict.toLowerCase().replace(' ','-') : 'wait';
+    const uw    = tryParseList(s.uw_notes);
+    const uwStr = uw.length ? uw.slice(0,2).join(' · ') : '';
+    const layers = tryParseObj(s.layers || {});
+
+    const bars = ['trend','momentum','volume','structure','catalyst','sm'].map(k => {
+      const maxes = {trend:25,momentum:25,volume:20,structure:20,catalyst:10,sm:20};
+      const v = layers[k] || 0;
+      const pct = Math.round(v / (maxes[k]||20) * 100);
+      return `<div class="mini-bar" title="${k}: ${v}">
+        <div class="mini-bar-fill" style="height:${pct}%"></div>
+      </div>`;
+    }).join('');
+
+    return `<a href="/analyse?ticker=${s.ticker}" class="scan-card">
+      <div class="score-ring ${vc}">${s.score}</div>
+      <div class="scan-card-body">
+        <div class="scan-row1">
+          <span class="scan-ticker">${s.ticker}</span>
+          <span class="badge badge-${vc}">${s.verdict||'—'}</span>
+          <span class="badge badge-${mode==='SWING'?'swing':'lt'}">${mode}</span>
+        </div>
+        <div class="scan-price-line">
+          $${fmt(s.price,2)}
+          ${s.rsi ? '· RSI ' + fmt(s.rsi,0) : ''}
+          ${s.stop ? '· Stop $' + fmt(s.stop,2) : ''}
+          ${s.target ? '· Target $' + fmt(s.target,2) : ''}
+          ${s.shares ? '· ' + s.shares + ' sh' : ''}
+        </div>
+        <div class="scan-uw ${uwStr?'has-uw':''}">${uwStr || 'No UW data'}</div>
+        <div class="mini-bars">${bars}</div>
+      </div>
+    </a>`;
+  }).join('');
+}
+
+async function triggerScan() {
+  const btn = document.getElementById('scanBtn');
+  btn.disabled = true;
+  btn.textContent = '⏳ Starting...';
+  const r = await api('/api/scan/run', {method:'POST'});
+  if (r && r.error) { toast(r.error); btn.disabled=false; btn.textContent='🔄 Scan Now'; return; }
+  toast('Scan started — this takes ~5 min');
+  pollProgress();
+}
+
+function pollProgress() {
+  document.getElementById('scanProgress').style.display = '';
+  pollTimer = setInterval(async () => {
+    const p = await api('/api/scan/progress');
+    if (!p) return;
+    const pct = p.total > 0 ? Math.round(p.done / p.total * 100) : 0;
+    document.getElementById('scanPhase').textContent = p.phase || 'Scanning...';
+    document.getElementById('scanPct').textContent  = pct + '%';
+    document.getElementById('scanFill').style.width = pct + '%';
+
+    if (p.status === 'done' || p.status === 'error') {
+      clearInterval(pollTimer);
+      document.getElementById('scanProgress').style.display = 'none';
+      document.getElementById('scanBtn').disabled = false;
+      document.getElementById('scanBtn').textContent = '🔄 Scan Now';
+      if (p.status === 'done') { loadResults(); toast('Scan complete!'); }
+      else { toast('Scan error — check logs'); }
+    }
+  }, 3000);
+}
+
+function tryParseList(v) {
+  if (Array.isArray(v)) return v;
+  try { return JSON.parse(v.replace(/'/g,'"')); } catch { return []; }
+}
+function tryParseObj(v) {
+  if (typeof v === 'object') return v;
+  try { return JSON.parse(v); } catch { return {}; }
+}
+
+loadResults();
+</script>
+{% endblock %}

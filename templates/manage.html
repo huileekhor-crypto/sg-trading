@@ -1,0 +1,287 @@
+{% extends "base.html" %}
+{% set active = "manage" %}
+{% block title %}Manage — SG Trading{% endblock %}
+
+{% block extra_css %}
+<style>
+.pos-card {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px;
+  margin-bottom: 10px;
+}
+.pos-header { display:flex; align-items:center; gap:10px; margin-bottom:10px; flex-wrap:wrap; }
+.pos-ticker { font-family:'DM Mono',monospace; font-size:20px; font-weight:800; }
+.pos-pnl { font-family:'DM Mono',monospace; font-size:18px; font-weight:700; }
+.pos-pnl.pos { color:var(--green); }
+.pos-pnl.neg { color:var(--red); }
+.pos-details { display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px; margin-bottom:10px; }
+.pos-detail { font-size:11px; }
+.pos-detail-label { color:var(--text-muted); font-size:10px; }
+.signal-banner {
+  border-radius:7px;
+  padding:8px 12px;
+  font-size:12px;
+  font-weight:600;
+  margin-bottom:6px;
+}
+.signal-banner.EXIT   { background:rgba(239,68,68,.12); color:var(--red); border:1px solid rgba(239,68,68,.2); }
+.signal-banner.PROFIT { background:rgba(34,197,94,.1); color:var(--green); border:1px solid rgba(34,197,94,.2); }
+.signal-banner.TRAIL  { background:rgba(34,197,94,.08); color:#4ade80; border:1px solid rgba(74,222,128,.15); }
+.signal-banner.WARN   { background:rgba(234,179,8,.08); color:var(--yellow); border:1px solid rgba(234,179,8,.2); }
+.signal-banner.REVIEW { background:rgba(59,130,246,.08); color:var(--blue); border:1px solid rgba(59,130,246,.2); }
+.signal-banner.THESIS { background:rgba(234,179,8,.08); color:var(--yellow); border:1px solid rgba(234,179,8,.2); }
+.metaplanet-warn {
+  background:rgba(239,68,68,.08);
+  border:1px solid rgba(239,68,68,.25);
+  border-radius:8px;
+  padding:10px 12px;
+  font-size:12px;
+  color:var(--red);
+  margin-bottom:8px;
+  font-weight:600;
+}
+.pos-actions { display:flex; gap:6px; flex-wrap:wrap; margin-top:10px; }
+.add-form { background:var(--bg2); border:1px solid var(--border); border-radius:var(--radius); padding:16px; margin-bottom:16px; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="section-header" style="margin-bottom:16px">
+  <div style="font-size:18px;font-weight:800">Open Positions</div>
+  <div style="display:flex;gap:8px">
+    <button class="btn btn-ghost btn-sm" onclick="toggleAdd()">+ Add</button>
+    <button class="btn btn-ghost btn-sm" onclick="loadPositions()">↻ Refresh</button>
+  </div>
+</div>
+
+<!-- Add position form -->
+<div id="addForm" class="add-form" style="display:none">
+  <div class="card-title">Add Position</div>
+  <div class="grid-2">
+    <div class="form-group">
+      <label class="form-label">Ticker</label>
+      <input class="form-input" id="pTicker" placeholder="MU" style="font-family:'DM Mono',monospace;text-transform:uppercase">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Mode</label>
+      <select class="form-select" id="pMode">
+        <option value="SWING">SWING</option>
+        <option value="LONG-TERM">LONG-TERM</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Entry Price</label>
+      <input class="form-input" id="pEntry" type="number" step="0.01" placeholder="98.40">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Shares</label>
+      <input class="form-input" id="pShares" type="number" placeholder="60">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Stop Loss</label>
+      <input class="form-input" id="pStop" type="number" step="0.01" placeholder="92.00">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Target</label>
+      <input class="form-input" id="pTarget" type="number" step="0.01" placeholder="115.00">
+    </div>
+  </div>
+  <div class="form-group">
+    <label class="form-label">Notes</label>
+    <input class="form-input" id="pNotes" placeholder="Entry reason...">
+  </div>
+  <div style="display:flex;gap:8px">
+    <button class="btn btn-primary btn-sm" onclick="addPosition()">Add Position</button>
+    <button class="btn btn-ghost btn-sm" onclick="toggleAdd()">Cancel</button>
+  </div>
+</div>
+
+<!-- Portfolio summary -->
+<div id="portfolioSummary" style="display:none;margin-bottom:16px">
+  <div class="grid-2">
+    <div class="stat-box">
+      <div class="stat-val" id="totalPnlVal">—</div>
+      <div class="stat-label">Total P&L</div>
+    </div>
+    <div class="stat-box">
+      <div class="stat-val" id="openCount">0</div>
+      <div class="stat-label">Open Positions</div>
+    </div>
+  </div>
+</div>
+
+<!-- Positions list -->
+<div id="positionsList">
+  <div class="empty-state">
+    <div class="icon">⚡</div>
+    <div class="msg">No open positions.<br>Add one to track live P&L.</div>
+  </div>
+</div>
+
+<!-- Close modal -->
+<div id="closeModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:200;align-items:center;justify-content:center;padding:20px">
+  <div class="card" style="max-width:360px;width:100%">
+    <div class="card-title">Close Position: <span id="closeTicker"></span></div>
+    <div class="form-group">
+      <label class="form-label">Exit Price</label>
+      <input class="form-input" id="closePrice" type="number" step="0.01">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Notes</label>
+      <input class="form-input" id="closeNotes" placeholder="Exit reason">
+    </div>
+    <div style="display:flex;gap:8px;margin-top:4px">
+      <button class="btn btn-primary btn-sm" onclick="submitClose()">Close & Log</button>
+      <button class="btn btn-ghost btn-sm" onclick="hideClose()">Cancel</button>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let positions = [];
+let closeId   = null;
+
+async function loadPositions() {
+  const data = await api('/api/positions');
+  if (!data) return;
+  positions = data;
+
+  const el = document.getElementById('positionsList');
+  if (!data.length) {
+    document.getElementById('portfolioSummary').style.display = 'none';
+    el.innerHTML = '<div class="empty-state"><div class="icon">⚡</div><div class="msg">No open positions.</div></div>';
+    return;
+  }
+
+  // Summary
+  const totalPnl = data.reduce((s, p) => s + (p.pnl_dollars || 0), 0);
+  document.getElementById('portfolioSummary').style.display = '';
+  document.getElementById('totalPnlVal').textContent = '$' + fmt(totalPnl, 0);
+  document.getElementById('totalPnlVal').style.color = totalPnl >= 0 ? 'var(--green)' : 'var(--red)';
+  document.getElementById('openCount').textContent = data.length;
+
+  el.innerHTML = data.map(p => renderPosition(p)).join('');
+}
+
+function renderPosition(p) {
+  const pnl = p.pnl_dollars || 0;
+  const pnlPct = p.pnl_pct || 0;
+  const pnlPos = pnl >= 0;
+  const mode = p.mode || 'SWING';
+  const signals = p.signals || [];
+
+  const signalHtml = signals.map(s =>
+    `<div class="signal-banner ${s.type}">${s.msg}</div>`
+  ).join('');
+
+  const metaWarn = p.stop_warning
+    ? `<div class="metaplanet-warn">⚠ SWING STOP NEAR — EXIT NOW. Don't repeat the Metaplanet mistake. A swing trade NEVER becomes a long-term hold because it's losing.</div>`
+    : '';
+
+  const pct = p.entry_price && p.target
+    ? Math.round((p.current_price - p.entry_price) / (p.target - p.entry_price) * 100)
+    : 0;
+
+  return `<div class="pos-card" id="pos-${p.id}">
+    <div class="pos-header">
+      <span class="pos-ticker">${p.ticker}</span>
+      <span class="badge badge-${mode==='SWING'?'swing':'lt'}">${mode}</span>
+      <div style="flex:1"></div>
+      <div>
+        <div class="pos-pnl ${pnlPos?'pos':'neg'}">${pnlPos?'+':''}$${fmt(Math.abs(pnl),0)}</div>
+        <div style="font-size:10px;color:var(--text-muted);text-align:right">${pnlPos?'+':''}${fmt(pnlPct,1)}%</div>
+      </div>
+    </div>
+
+    ${metaWarn}
+    ${signalHtml}
+
+    <div class="pos-details">
+      <div class="pos-detail">
+        <div class="pos-detail-label">Current</div>
+        <div style="font-family:'DM Mono',monospace;font-weight:700">$${fmt(p.current_price)}</div>
+      </div>
+      <div class="pos-detail">
+        <div class="pos-detail-label">Entry</div>
+        <div style="font-family:'DM Mono',monospace">$${fmt(p.entry_price)}</div>
+      </div>
+      <div class="pos-detail">
+        <div class="pos-detail-label">Shares</div>
+        <div>${p.shares||0}</div>
+      </div>
+      <div class="pos-detail">
+        <div class="pos-detail-label">Stop</div>
+        <div style="color:var(--red);font-family:'DM Mono',monospace">$${fmt(p.stop)}</div>
+      </div>
+      <div class="pos-detail">
+        <div class="pos-detail-label">Target</div>
+        <div style="color:var(--green);font-family:'DM Mono',monospace">$${fmt(p.target)}</div>
+      </div>
+      <div class="pos-detail">
+        <div class="pos-detail-label">Progress</div>
+        <div>${pct}% to target</div>
+      </div>
+    </div>
+
+    <div class="pos-actions">
+      <a href="/analyse?ticker=${p.ticker}" class="btn btn-ghost btn-sm">Re-analyse →</a>
+      <button class="btn btn-danger btn-sm" onclick="showClose(${p.id},'${p.ticker}',${p.current_price||0})">Close</button>
+    </div>
+  </div>`;
+}
+
+function toggleAdd() {
+  const f = document.getElementById('addForm');
+  f.style.display = f.style.display === 'none' ? '' : 'none';
+}
+
+async function addPosition() {
+  const data = {
+    ticker:      document.getElementById('pTicker').value.toUpperCase(),
+    mode:        document.getElementById('pMode').value,
+    entry_price: parseFloat(document.getElementById('pEntry').value),
+    shares:      parseInt(document.getElementById('pShares').value),
+    stop:        parseFloat(document.getElementById('pStop').value) || null,
+    target:      parseFloat(document.getElementById('pTarget').value) || null,
+    notes:       document.getElementById('pNotes').value,
+  };
+  if (!data.ticker || !data.entry_price || !data.shares) {
+    toast('Ticker, entry price, shares required'); return;
+  }
+  const r = await api('/api/positions', {method:'POST', body:JSON.stringify(data)});
+  if (r && r.success) { toggleAdd(); loadPositions(); toast('Position added ✓'); }
+  else toast('Error adding position');
+}
+
+function showClose(id, ticker, currentPrice) {
+  closeId = id;
+  document.getElementById('closeTicker').textContent = ticker;
+  document.getElementById('closePrice').value = currentPrice || '';
+  document.getElementById('closeNotes').value = '';
+  const m = document.getElementById('closeModal');
+  m.style.display = 'flex';
+}
+function hideClose() {
+  document.getElementById('closeModal').style.display = 'none';
+}
+async function submitClose() {
+  const price = parseFloat(document.getElementById('closePrice').value);
+  if (!price) { toast('Enter exit price'); return; }
+  const r = await api(`/api/positions/${closeId}/close`, {
+    method:'POST',
+    body: JSON.stringify({exit_price: price, notes: document.getElementById('closeNotes').value})
+  });
+  if (r && r.success) { hideClose(); loadPositions(); toast('Position closed & logged ✓'); }
+  else toast('Error closing position');
+}
+
+// Auto-refresh every 15s
+loadPositions();
+setInterval(loadPositions, 15000);
+</script>
+{% endblock %}

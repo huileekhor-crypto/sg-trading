@@ -1,0 +1,105 @@
+{% extends "base.html" %}
+{% set active = "settings" %}
+{% block title %}Settings — SG Trading{% endblock %}
+
+{% block content %}
+<div style="font-size:18px;font-weight:800;margin-bottom:20px">Settings</div>
+
+<div class="card" style="margin-bottom:16px">
+  <div class="card-title">Account</div>
+  <div class="form-group">
+    <label class="form-label">Account Size (USD)</label>
+    <input class="form-input" id="sAccount" type="number" placeholder="20000">
+  </div>
+  <div class="form-group">
+    <label class="form-label">Weekly Target (USD)</label>
+    <input class="form-input" id="sWeekly" type="number" placeholder="1500">
+  </div>
+</div>
+
+<div class="card" style="margin-bottom:16px">
+  <div class="card-title">Risk Management</div>
+  <div class="form-group">
+    <label class="form-label">Swing Risk Per Trade (%)</label>
+    <input class="form-input" id="sSwingRisk" type="number" step="0.1" placeholder="2.0">
+    <div style="font-size:11px;color:var(--text-muted);margin-top:4px">2% of $20k = $400 max loss per swing trade</div>
+  </div>
+  <div class="form-group">
+    <label class="form-label">Long-Term Position Size (%)</label>
+    <input class="form-input" id="sLtPos" type="number" step="0.5" placeholder="7.5">
+    <div style="font-size:11px;color:var(--text-muted);margin-top:4px">7.5% of $20k = $1,500 per LT position</div>
+  </div>
+</div>
+
+<div class="card" style="margin-bottom:16px">
+  <div class="card-title">Email Alerts</div>
+  <div class="form-group">
+    <label class="form-label">Alert Email Address</label>
+    <input class="form-input" id="sEmail" type="email" placeholder="your@email.com">
+    <div style="font-size:11px;color:var(--text-muted);margin-top:4px">Daily brief sent at 6pm SGT (after scan)</div>
+  </div>
+</div>
+
+<div class="card" style="margin-bottom:16px">
+  <div class="card-title">API Keys Status</div>
+  <div id="apiStatus" style="font-size:12px;line-height:2">Loading...</div>
+</div>
+
+<button class="btn btn-primary" onclick="saveSettings()">Save Settings</button>
+
+<div style="margin-top:20px;padding:16px;background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius)">
+  <div class="card-title" style="margin-bottom:8px">Critical Rules</div>
+  <div style="font-size:12px;line-height:2;color:var(--text-dim)">
+    <div>• A swing trade NEVER becomes a long-term hold because it's losing</div>
+    <div>• Stop hit = EXIT. No exceptions. No hoping.</div>
+    <div>• Set stop loss BEFORE entering any position</div>
+    <div>• 2% risk per swing = maximum drawdown is controlled</div>
+    <div>• Score &lt;55 = skip. Score &lt;70 = wait. Score 85+ = act</div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+async function loadSettings() {
+  const s = await api('/api/settings');
+  if (!s) return;
+  document.getElementById('sAccount').value   = s.account_size   || 20000;
+  document.getElementById('sWeekly').value    = s.weekly_target  || 1500;
+  document.getElementById('sSwingRisk').value = s.swing_risk     || 2.0;
+  document.getElementById('sLtPos').value     = s.lt_position    || 7.5;
+  document.getElementById('sEmail').value     = s.email          || '';
+
+  // API key status check
+  const r = await fetch('/health');
+  const h = await r.json();
+  document.getElementById('apiStatus').innerHTML = [
+    ['FINNHUB_API_KEY',   'Finnhub (technicals)'],
+    ['ANTHROPIC_API_KEY', 'Anthropic Claude (AI analysis)'],
+    ['UW_API_KEY',        'Unusual Whales (smart money)'],
+    ['EMAIL_SENDER',      'Email alerts'],
+  ].map(([key, label]) =>
+    `<div>
+      <span style="color:var(--text-muted)">${label}</span>
+      <span style="color:var(--text-muted)"> — </span>
+      <span style="color:var(--text-muted);font-size:10px">Set in Azure Configuration → ${key}</span>
+    </div>`
+  ).join('');
+}
+
+async function saveSettings() {
+  const data = {
+    account_size:  parseFloat(document.getElementById('sAccount').value)   || 20000,
+    weekly_target: parseFloat(document.getElementById('sWeekly').value)    || 1500,
+    swing_risk:    parseFloat(document.getElementById('sSwingRisk').value) || 2.0,
+    lt_position:   parseFloat(document.getElementById('sLtPos').value)     || 7.5,
+    email:         document.getElementById('sEmail').value.trim(),
+  };
+  const r = await api('/api/settings', {method:'PUT', body:JSON.stringify(data)});
+  if (r && r.success) toast('Settings saved ✓');
+  else toast('Error saving settings');
+}
+
+loadSettings();
+</script>
+{% endblock %}
