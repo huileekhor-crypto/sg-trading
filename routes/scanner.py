@@ -47,8 +47,57 @@ def trigger_scan():
     return jsonify({"message": "Scan started"})
 
 
+def _get_uw_screener_tickers():
+    """Pull extra tickers from UW screener + movers."""
+    from utils.unusual_whales import uw_screener, uw_movers
+    extra = set()
+    try:
+        screener_data = uw_screener({
+            "order": "volume", "order_direction": "desc", "limit": 30
+        })
+        if screener_data:
+            items = screener_data.get("data", [])
+            for item in items:
+                t = str(item.get("ticker", item.get("symbol", ""))).upper()
+                if t and t.isalpha() and len(t) <= 5:
+                    extra.add(t)
+    except Exception:
+        pass
+    try:
+        movers_data = uw_movers()
+        if movers_data:
+            items = movers_data.get("data", movers_data if isinstance(movers_data, list) else [])
+            for item in (items or [])[:20]:
+                t = str(item.get("ticker", item.get("symbol", ""))).upper()
+                if t and t.isalpha() and len(t) <= 5:
+                    extra.add(t)
+    except Exception:
+        pass
+    return list(extra)
+
+
+def _get_analyst_rating(ticker):
+    """Pull analyst consensus rating for ticker."""
+    from utils.unusual_whales import uw_analysts
+    try:
+        data = uw_analysts(ticker)
+        if not data:
+            return None
+        items = data.get("data", [])
+        if not items:
+            return None
+        item = items[0] if isinstance(items, list) else data
+        rating = item.get("consensus", item.get("rating", item.get("analyst_consensus", "")))
+        target = item.get("price_target", item.get("mean_target", ""))
+        if rating:
+            return {"rating": str(rating), "target": target}
+    except Exception:
+        pass
+    return None
+
+
 def run_scan_job():
-    """Full 6-layer scan. Called by scheduler and manual trigger."""
+    """Full 6-layer scan with UW screener. Called by scheduler and manual trigger."""
     global _scan_running, _scan_progress
     _scan_running = True
     _scan_progress = {"status": "running", "done": 0, "total": 0, "phase": "Loading tickers"}
@@ -59,23 +108,32 @@ def run_scan_job():
         risk     = settings.get("swing_risk", 2.0)
         lt_pos   = settings.get("lt_position", 7.5)
 
-        universe = get_scan_universe()
+        _scan_progress["phase"] = "Fetching UW screener + movers"
+        uw_extra = _get_uw_screener_tickers()
+
+        universe = get_scan_universe(extra_watchlist=uw_extra)
         _scan_progress["total"] = len(universe)
         _scan_progress["phase"] = "Quick scan (layers 1-4)"
 
         # Phase 1: quick 4-layer scan
         quick_results = []
+        uw_extra_set  = set(uw_extra)
         for i, ticker in enumerate(universe):
             try:
                 q = quick_score(ticker)
+                # UW screener results get a small boost in priority
+                if ticker in uw_extra_set:
+                    q["uw_screener"] = True
+                    q["score4"] = min(q.get("score4", 0) + 5, 100)
                 quick_results.append(q)
                 time.sleep(0.05)
             except Exception:
                 pass
             _scan_progress["done"] = i + 1
 
-        # Keep top 40 by 4-layer score
-        candidates = [r for r in quick_results if r.get("score4", 0) >= 55]
+        # Keep top 40 (UW screener + movers always included if 4-layer >=45)
+        candidates = [r for r in quick_results if r.get("score4", 0) >= 55
+                      or (r.get("uw_screener") and r.get("score4", 0) >= 45)]
         candidates.sort(key=lambda x: x.get("score4", 0), reverse=True)
         candidates = candidates[:40]
 
@@ -106,20 +164,34 @@ def run_scan_job():
                     ps = calc_lt_setup(price, atr, account, lt_pos)
 
                 uw = layers["smart_money"]
+                # Analyst rating (best-effort, non-blocking)
+                analyst = None
+                try:
+                    analyst = _get_analyst_rating(ticker)
+                except Exception:
+                    pass
+
+                # UW screener flag: 6-layer >=70 + from screener = highest priority
+                from_uw_screener = cand.get("uw_screener", False)
+                priority = "HIGH" if (from_uw_screener and score >= 70) else "NORMAL"
+
                 final_results.append({
-                    "ticker":   ticker,
-                    "score":    score,
-                    "verdict":  full["verdict"],
-                    "mode_tag": mode_tag,
-                    "price":    price,
-                    "rsi":      full["technicals"].get("rsi"),
-                    "ema20":    full["technicals"].get("ema20"),
-                    "stop":     ps.get("stop"),
-                    "target":   ps.get("target"),
-                    "shares":   ps.get("shares", 0),
-                    "uw_notes": uw.get("notes", []),
-                    "uw_score": uw.get("score", 0),
-                    "layers":   {
+                    "ticker":       ticker,
+                    "score":        score,
+                    "verdict":      full["verdict"],
+                    "mode_tag":     mode_tag,
+                    "price":        price,
+                    "rsi":          full["technicals"].get("rsi"),
+                    "ema20":        full["technicals"].get("ema20"),
+                    "stop":         ps.get("stop"),
+                    "target":       ps.get("target"),
+                    "shares":       ps.get("shares", 0),
+                    "uw_notes":     uw.get("notes", []),
+                    "uw_score":     uw.get("score", 0),
+                    "analyst":      analyst,
+                    "uw_screener":  from_uw_screener,
+                    "priority":     priority,
+                    "layers":       {
                         "trend":     layers["trend"]["score"],
                         "momentum":  layers["momentum"]["score"],
                         "volume":    layers["volume"]["score"],
