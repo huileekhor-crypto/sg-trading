@@ -9,6 +9,14 @@ from models.journal import get_settings
 analyse_bp = Blueprint("analyse", __name__)
 
 
+@analyse_bp.route("/api/seasonality/<ticker>")
+def seasonality(ticker):
+    from utils.unusual_whales import get_seasonality_note, uw_seasonality
+    note = get_seasonality_note(ticker.upper())
+    raw  = uw_seasonality(ticker.upper())
+    return jsonify({"ticker": ticker.upper(), "note": note, "data": raw})
+
+
 @analyse_bp.route("/analyse")
 def analyse_page():
     ticker = request.args.get("ticker", "").upper()
