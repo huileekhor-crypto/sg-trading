@@ -64,6 +64,21 @@
 {% endblock %}
 
 {% block content %}
+<!-- Market Regime Banner -->
+<div id="regimeBanner" style="margin-bottom:16px;display:none">
+  <div id="regimeCard" class="card" style="display:flex;align-items:center;gap:12px">
+    <div id="regimeIcon" style="font-size:22px">🌊</div>
+    <div style="flex:1">
+      <div style="font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;margin-bottom:2px" id="regimeLabel">MARKET TIDE</div>
+      <div style="font-size:13px;font-weight:600" id="regimeSummary">Loading...</div>
+      <div style="font-size:11px;margin-top:2px" id="regimeAdvice"></div>
+    </div>
+    <div style="text-align:right">
+      <div style="font-family:'DM Mono',monospace;font-size:16px;font-weight:800" id="regimeLabel2">—</div>
+    </div>
+  </div>
+</div>
+
 <div class="section-header" style="margin-bottom:16px">
   <div>
     <div style="font-size:18px;font-weight:800;margin-bottom:2px">Daily Scan</div>
@@ -194,6 +209,41 @@ async function triggerScan() {
   if (r && r.error) { toast(r.error); btn.disabled=false; btn.textContent='🔄 Scan Now'; return; }
   toast('Scan started — this takes ~5 min');
   pollProgress();
+}
+
+async function loadRegime() {
+  const r = await api('/api/market/regime');
+  if (!r || !r.available) return;
+  const banner = document.getElementById('regimeBanner');
+  const card   = document.getElementById('regimeCard');
+  const colors = {BULLISH:'var(--green)', NEUTRAL:'var(--yellow)', BEARISH:'var(--red)'};
+  const icons  = {BULLISH:'🟢', NEUTRAL:'🟡', BEARISH:'🔴'};
+  const color  = colors[r.regime] || 'var(--text-dim)';
+
+  document.getElementById('regimeLabel').style.color  = color;
+  document.getElementById('regimeLabel2').textContent = r.regime;
+  document.getElementById('regimeLabel2').style.color = color;
+  document.getElementById('regimeSummary').textContent = r.summary || '';
+  document.getElementById('regimeSummary').style.color = color;
+  document.getElementById('regimeAdvice').textContent  = r.advice || '';
+  document.getElementById('regimeAdvice').style.color  = 'var(--text-dim)';
+  document.getElementById('regimeIcon').textContent    = icons[r.regime] || '🟡';
+
+  // Card border color
+  card.style.borderColor = r.regime === 'BULLISH'
+    ? 'rgba(34,197,94,.25)'
+    : r.regime === 'BEARISH'
+    ? 'rgba(239,68,68,.25)'
+    : 'rgba(234,179,8,.2)';
+
+  // Warning for bearish regime
+  if (r.regime === 'BEARISH') {
+    card.style.background = 'rgba(239,68,68,.04)';
+  } else if (r.regime === 'BULLISH') {
+    card.style.background = 'rgba(34,197,94,.03)';
+  }
+
+  banner.style.display = '';
 }
 
 function pollProgress() {

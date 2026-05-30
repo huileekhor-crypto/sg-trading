@@ -37,6 +37,17 @@ def scan_progress():
     return jsonify(_scan_progress)
 
 
+@scanner_bp.route("/api/market/regime")
+def market_regime():
+    from utils.unusual_whales import get_market_regime
+    try:
+        regime = get_market_regime()
+    except Exception as e:
+        regime = {"regime": "NEUTRAL", "summary": "Unavailable", "advice": "Trade normal sizing",
+                  "available": False, "color": "yellow"}
+    return jsonify(regime)
+
+
 @scanner_bp.route("/api/scan/run", methods=["POST"])
 def trigger_scan():
     global _scan_running
