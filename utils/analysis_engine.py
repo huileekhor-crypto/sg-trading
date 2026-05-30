@@ -182,6 +182,7 @@ def layer6_smart_money(ticker):
         "score":     result["score"],
         "max":       20,
         "notes":     result["notes"],
+        "signals":   result.get("signals", []),
         "available": result["available"],
         "reason":    ", ".join(result["notes"]) if result["notes"] else "No unusual activity",
         "raw":       result.get("raw", {}),
@@ -192,11 +193,21 @@ def layer6_smart_money(ticker):
 
 def run_full_analysis(ticker, mode="SWING"):
     """Run all 6 layers. Returns complete analysis dict."""
+    from utils.unusual_whales import get_earnings_warning, get_seasonality_note
     # Fetch data
-    price_data  = get_live_price(ticker)
-    candles     = get_candles(ticker, days=65)
-    news_items  = get_news(ticker, count=5)
+    price_data   = get_live_price(ticker)
+    candles      = get_candles(ticker, days=65)
+    news_items   = get_news(ticker, count=5)
     fundamentals = get_fundamentals(ticker)
+    # Earnings warning + seasonality (non-blocking)
+    try:
+        earnings_warning = get_earnings_warning(ticker)
+    except Exception:
+        earnings_warning = None
+    try:
+        seasonality_note = get_seasonality_note(ticker)
+    except Exception:
+        seasonality_note = None
 
     price = price_data.get("price", 0)
     vol   = price_data.get("volume", 0)
@@ -267,12 +278,14 @@ def run_full_analysis(ticker, mode="SWING"):
         target_lt    = round(price + 8.0 * atr, 2)
 
     # Discipline checks
+    no_earnings_risk = earnings_warning is None
     discipline = {
         "not_extended":    l4["score"] >= 10,
         "not_overbought":  l2["score"] >= 10,
         "has_catalyst":    l5["score"] >= 3,
         "stop_defined":    True,
         "smart_money":     l6["score"] >= 5 or not l6["available"],
+        "no_earnings_risk": no_earnings_risk,
     }
 
     return {
@@ -283,6 +296,8 @@ def run_full_analysis(ticker, mode="SWING"):
         "verdict_class": verdict_class,
         "price_data": price_data,
         "price":     price,
+        "earnings_warning": earnings_warning,
+        "seasonality_note": seasonality_note,
         "layers": {
             "trend":       l1,
             "momentum":    l2,
