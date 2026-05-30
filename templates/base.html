@@ -428,6 +428,7 @@ body {
     </nav>
 
     <div class="top-user">
+      <span id="liveStatus" style="font-size:10px;padding:3px 7px;border-radius:4px;background:rgba(34,197,94,.1);color:var(--green);font-weight:700">⚡ LIVE</span>
       <span id="userName"></span>
       <a href="/auth/logout">Logout</a>
     </div>
@@ -488,6 +489,26 @@ function fmtK(n) {
 fetch('/auth/me').then(r=>r.json()).then(d=>{
   if(d.authenticated) document.getElementById('userName').textContent = d.user.name.split(' ')[0];
 });
+
+// Live status indicator — polls /api/ws/status every 15s
+async function updateLiveStatus() {
+  try {
+    const s = await fetch('/api/ws/status').then(r=>r.json());
+    const el = document.getElementById('liveStatus');
+    if (!el) return;
+    if (s.source === 'UW' && s.connected) {
+      el.textContent = '⚡ LIVE (UW)';
+      el.style.background = 'rgba(34,197,94,.12)';
+      el.style.color = 'var(--green)';
+    } else {
+      el.textContent = '⚡ LIVE (Yahoo)';
+      el.style.background = 'rgba(249,115,22,.1)';
+      el.style.color = 'var(--orange)';
+    }
+  } catch(e) {}
+}
+updateLiveStatus();
+setInterval(updateLiveStatus, 15000);
 </script>
 {% block extra_js %}{% endblock %}
 </body>
