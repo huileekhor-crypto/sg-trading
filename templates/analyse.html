@@ -116,7 +116,10 @@
   <div id="seasonalityNote" style="display:none;margin-bottom:12px"></div>
 
   <!-- AI analysis -->
-  <div id="aiSection" style="margin-bottom:12px"></div>
+  <div id="aiCard" class="card" style="margin-bottom:12px;display:none">
+    <div class="card-title" style="color:var(--orange)">🤖 AI Deep Analysis</div>
+    <div id="aiSection"></div>
+  </div>
 
   <!-- Trade setup -->
   <div class="card" style="margin-bottom:12px">
@@ -269,18 +272,20 @@ function renderResult(d) {
   // AI
   const ai = d.ai || {};
   const aiSections = [
-    {key:'why_buy',       label:'Why Buy',        cls:'green'},
+    {key:'why_buy',       label:'Why Buy',           cls:'green'},
     {key:'why_fail',      label:'Why It Could Fail', cls:'red'},
     {key:'when_to_enter', label:'When to Enter (SGT)', cls:'blue'},
-    {key:'exit_strategy', label:'Exit Strategy',   cls:'orange'},
-    {key:'verdict',       label:'AI Verdict',      cls:'orange'},
+    {key:'exit_strategy', label:'Exit Strategy',      cls:'orange'},
+    {key:'verdict',       label:'AI Verdict',         cls:'orange'},
   ];
-  document.getElementById('aiSection').innerHTML = aiSections.filter(s => ai[s.key]).map(s =>
+  const aiHtml = aiSections.filter(s => ai[s.key]).map(s =>
     `<div class="ai-section">
       <div class="ai-section-title ${s.cls}">${s.label}</div>
       <div class="ai-text">${escHtml(ai[s.key])}</div>
     </div>`
   ).join('');
+  document.getElementById('aiSection').innerHTML = aiHtml;
+  document.getElementById('aiCard').style.display = aiHtml ? '' : 'none';
 
   // Trade setup
   const t = d.trade || {};

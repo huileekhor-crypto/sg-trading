@@ -3,15 +3,11 @@
 import os
 import anthropic
 
-_client = None
-
 def _get_client():
-    global _client
-    if _client is None:
-        key = os.environ.get("ANTHROPIC_API_KEY", "")
-        if key:
-            _client = anthropic.Anthropic(api_key=key)
-    return _client
+    key = os.environ.get("ANTHROPIC_API_KEY", "")
+    if not key:
+        return None
+    return anthropic.Anthropic(api_key=key)
 
 
 def generate_analysis(ticker, analysis, settings):
