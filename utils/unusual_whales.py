@@ -122,6 +122,11 @@ def uw_ticker_earnings(ticker):
     return _get(f"/api/stock/{ticker}/earnings", ttl=3600)
 
 
+def uw_gex(ticker):
+    """Greek exposure by expiry date — /api/stock/{ticker}/greek-exposure."""
+    return _get(f"/api/stock/{ticker}/greek-exposure", ttl=300)
+
+
 def uw_seasonality(ticker):
     """Monthly seasonality for ticker."""
     return _get(f"/api/seasonality/{ticker}/monthly", ttl=86400)
@@ -130,6 +135,66 @@ def uw_seasonality(ticker):
 def uw_news_headlines():
     """Live news headlines."""
     return _get("/api/news/headlines", ttl=120)
+
+
+# ─── GEX helper ──────────────────────────────────────────────────────────────
+
+def _compute_gex(ticker):
+    """
+    Fetch greek-exposure and return a plain-English GEX summary dict.
+    Net GEX = sum(call_gamma + put_gamma) across all expiries.
+    Positive = dealers long gamma (mean-reverting / pinning).
+    Negative = dealers short gamma (moves amplified / trending).
+    """
+    data = uw_gex(ticker)
+    if not data:
+        return {"available": False, "text": "not available"}
+
+    rows = data.get("data", [])
+    if not rows:
+        return {"available": False, "text": "no data returned"}
+
+    # Aggregate net GEX across all expiries
+    net_gex = sum(_sf(r.get("call_gamma", 0)) + _sf(r.get("put_gamma", 0)) for r in rows)
+
+    # Largest single-expiry wall (most gamma concentration)
+    def _row_net(r):
+        return abs(_sf(r.get("call_gamma", 0)) + _sf(r.get("put_gamma", 0)))
+    wall_row  = max(rows, key=_row_net)
+    wall_date = wall_row.get("date", "")
+    wall_net  = _sf(wall_row.get("call_gamma", 0)) + _sf(wall_row.get("put_gamma", 0))
+
+    # Net delta (dealer directional exposure)
+    net_delta = sum(_sf(r.get("call_delta", 0)) + _sf(r.get("put_delta", 0)) for r in rows)
+
+    # Interpretation
+    if net_gex > 0:
+        regime = "POSITIVE"
+        meaning = "dealers are long gamma — expect mean-reversion, moves get faded"
+    elif net_gex < 0:
+        regime = "NEGATIVE"
+        meaning = "dealers are short gamma — moves tend to be amplified and trending"
+    else:
+        regime = "NEUTRAL"
+        meaning = "balanced gamma — no strong pinning or amplification"
+
+    sign = "+" if net_gex >= 0 else ""
+    delta_sign = "+" if net_delta >= 0 else ""
+
+    return {
+        "available":  True,
+        "net_gex":    round(net_gex),
+        "net_delta":  round(net_delta),
+        "regime":     regime,
+        "wall_date":  wall_date,
+        "wall_net":   round(wall_net),
+        "expiry_count": len(rows),
+        "text": (
+            f"{regime} ({sign}{net_gex/1e6:.1f}M net) — {meaning}. "
+            f"Largest wall: {wall_date} ({'+' if wall_net>=0 else ''}{wall_net/1e6:.1f}M). "
+            f"Net delta: {delta_sign}{net_delta/1e6:.0f}M."
+        ),
+    }
 
 
 # ─── Smart Money Score (Layer 6) — upgraded ──────────────────────────────────
@@ -155,7 +220,7 @@ def smart_money_score(ticker):
         "darkpool":       [],
         "insider":        [],
         "congress":       [],
-        "gex":            "not available on current plan",
+        "gex":            _compute_gex(ticker),
         "short_interest": None,
     }
 

@@ -432,7 +432,19 @@ function renderResult(d) {
     }
 
     // ── GEX ───────────────────────────────────────────────────────────────
-    html += `<div style="padding:5px 0;border-bottom:1px solid var(--border);font-size:11px;color:var(--text-muted)">• GEX: ${escHtml(ev.gex||'not available on current plan')}</div>`;
+    // GEX — structured dict from /api/stock/{ticker}/greek-exposure
+    const gex = ev.gex || {};
+    if (gex.available) {
+      const gexColor = gex.regime === 'POSITIVE' ? 'var(--green)' : gex.regime === 'NEGATIVE' ? 'var(--red)' : 'var(--yellow)';
+      const gexSign  = gex.net_gex >= 0 ? '+' : '';
+      html += `<div style="padding:7px 0;border-bottom:1px solid var(--border)">
+        <span style="font-size:11px;font-weight:700;color:${gexColor}">• GEX: ${gex.regime} (${gexSign}${(gex.net_gex/1e6).toFixed(1)}M net)</span>
+        <span style="font-size:10px;color:var(--text-muted);margin-left:4px">— ${gex.regime==='POSITIVE'?'dealers long gamma, moves get faded (mean-reverting)':gex.regime==='NEGATIVE'?'dealers short gamma, moves amplified (trending)':'balanced'}</span>
+        <div style="font-size:10px;color:var(--text-muted);margin-top:2px;padding-left:14px">Largest wall: ${escHtml(gex.wall_date)} (${gex.wall_net>=0?'+':''}${(gex.wall_net/1e6).toFixed(1)}M) · Net delta: ${gex.net_delta>=0?'+':''}${(gex.net_delta/1e6).toFixed(0)}M · ${gex.expiry_count} expiries</div>
+      </div>`;
+    } else {
+      html += `<div style="padding:5px 0;border-bottom:1px solid var(--border);font-size:11px;color:var(--text-muted)">• GEX: ${escHtml(gex.text||'not available')}</div>`;
+    }
 
     // ── Insider ───────────────────────────────────────────────────────────
     const ins = ev.insider || [];
