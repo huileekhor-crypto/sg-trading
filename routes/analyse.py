@@ -48,11 +48,14 @@ def analyse():
     if not price:
         return jsonify({"error": f"Could not fetch price for {ticker}"}), 404
 
-    atr = analysis["technicals"].get("atr")
+    atr           = analysis["technicals"].get("atr")
+    planned       = analysis.get("planned_entry", {})
+    planned_entry = planned.get("entry", price)
+
     if mode == "SWING":
-        trade = calc_swing_setup(price, atr, account, risk)
+        trade = calc_swing_setup(planned_entry, atr, account, risk)
     else:
-        trade = calc_lt_setup(price, atr, account, lt_pos)
+        trade = calc_lt_setup(planned_entry, atr, account, lt_pos)
 
     # AI narrative
     try:
@@ -66,9 +69,11 @@ def analyse():
     pot_gain = trade.get("potential_gain", 0)
     weekly_pct = round(pot_gain / weekly_target * 100, 1) if weekly_target else 0
 
-    # Build IBKR order string
+    entry_type = planned.get("entry_type", "MARKET")
     ibkr_order = (
-        f"Buy {trade.get('shares', 0)} {ticker} limit ${price:.2f}, "
+        f"Buy {trade.get('shares', 0)} {ticker} "
+        f"{'LMT' if entry_type in ('BREAKOUT','PULLBACK') else 'MKT'} "
+        f"${planned_entry:.2f} GTC, "
         f"stop ${trade.get('stop', 0):.2f}, "
         f"target ${trade.get('target', 0):.2f}"
     )
@@ -81,6 +86,7 @@ def analyse():
         "verdict_class":    analysis["verdict_class"],
         "price_data":       analysis["price_data"],
         "price":            price,
+        "planned_entry":    planned,
         "layers":           analysis["layers"],
         "technicals":       analysis["technicals"],
         "fundamentals":     analysis["fundamentals"],

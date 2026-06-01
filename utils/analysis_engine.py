@@ -7,6 +7,133 @@ from utils.unusual_whales import smart_money_score
 
 # ─── Technical helpers ────────────────────────────────────────────────────────
 
+def _swing_highs(candles, lookback=60, window=3):
+    """Pivot highs: bars where high > {window} bars on each side."""
+    subset = candles[-lookback:] if len(candles) > lookback else candles
+    highs = []
+    for i in range(window, len(subset) - window):
+        h = subset[i]['h']
+        if all(h > subset[j]['h'] for j in range(i - window, i)) and \
+           all(h > subset[j]['h'] for j in range(i + 1, i + window + 1)):
+            highs.append(round(h, 2))
+    return highs
+
+
+def _swing_lows(candles, lookback=60, window=3):
+    """Pivot lows: bars where low < {window} bars on each side."""
+    subset = candles[-lookback:] if len(candles) > lookback else candles
+    lows = []
+    for i in range(window, len(subset) - window):
+        l = subset[i]['l']
+        if all(l < subset[j]['l'] for j in range(i - window, i)) and \
+           all(l < subset[j]['l'] for j in range(i + 1, i + window + 1)):
+            lows.append(round(l, 2))
+    return lows
+
+
+def calc_planned_entry(price, candles, ema20, ema50, atr):
+    """
+    Choose BREAKOUT or PULLBACK entry from actual chart levels.
+    Returns: {entry, entry_type, entry_reason, resistance, support, current_price}
+    """
+    if not candles or not price:
+        return {"entry": price, "entry_type": "MARKET",
+                "entry_reason": "Insufficient data — using current price",
+                "resistance": None, "support": None, "current_price": price}
+
+    recent_highs = _swing_highs(candles, lookback=25, window=3)
+    all_highs    = _swing_highs(candles, lookback=60, window=3)
+    all_lows     = _swing_lows(candles,  lookback=60, window=3)
+
+    # Nearest resistance above price
+    res_above = [h for h in all_highs if h > price * 1.001]
+    nearest_resistance = round(min(res_above), 2) if res_above else None
+
+    # Most recent pivot high (for breakout detection)
+    recent_pivot = max(recent_highs) if recent_highs else None
+
+    # Nearest swing-low support below price
+    sup_below = [l for l in all_lows if l < price * 0.999]
+    nearest_support = round(max(sup_below), 2) if sup_below else None
+
+    ext20 = (price - ema20) / ema20 * 100 if ema20 else 0
+
+    # ── BREAKOUT: price is within ±3% of a recent pivot high ──────────────────
+    if recent_pivot:
+        dist = (price - recent_pivot) / recent_pivot * 100
+        if -1.0 <= dist <= 3.0:
+            breakout_entry = round(recent_pivot * 1.003, 2)
+            pct_above = round(dist, 1)
+            return {
+                "entry":        breakout_entry,
+                "entry_type":   "BREAKOUT",
+                "entry_reason": (
+                    f"Price {'clearing' if dist >= 0 else 'testing'} "
+                    f"${recent_pivot:.2f} pivot high "
+                    f"({'up {:.1f}%'.format(pct_above) if dist >= 0 else '{:.1f}% below'.format(abs(pct_above))}). "
+                    f"Enter on confirmed close above — limit ${breakout_entry:.2f}."
+                ),
+                "resistance":   nearest_resistance,
+                "support":      nearest_support or (round(ema20, 2) if ema20 else None),
+                "current_price": price,
+            }
+
+    # ── PULLBACK to EMA50: extended >8% above EMA20 ───────────────────────────
+    if ema50 and ext20 > 8:
+        entry = round(ema50, 2)
+        return {
+            "entry":        entry,
+            "entry_type":   "PULLBACK",
+            "entry_reason": (
+                f"Extended {ext20:.1f}% above EMA20 — entering here is FOMO. "
+                f"Wait for pullback to EMA50 at ${entry:.2f}."
+            ),
+            "resistance":   nearest_resistance,
+            "support":      entry,
+            "current_price": price,
+        }
+
+    # ── PULLBACK to EMA20: extended 3-8% above EMA20 ──────────────────────────
+    if ema20 and 3 < ext20 <= 8:
+        entry = round(ema20, 2)
+        return {
+            "entry":        entry,
+            "entry_type":   "PULLBACK",
+            "entry_reason": (
+                f"Extended {ext20:.1f}% above EMA20 at ${entry:.2f}. "
+                f"Wait for pullback to EMA20 — better risk/reward entry at support."
+            ),
+            "resistance":   nearest_resistance,
+            "support":      entry,
+            "current_price": price,
+        }
+
+    # ── AT SUPPORT: price near EMA20 (±3%) — good pullback entry ──────────────
+    if ema20 and abs(ext20) <= 3:
+        entry = round(ema20, 2) if price >= ema20 else price
+        return {
+            "entry":        entry,
+            "entry_type":   "PULLBACK",
+            "entry_reason": (
+                f"Consolidating at EMA20 support (${entry:.2f}), "
+                f"{ext20:.1f}% {'above' if ext20 >= 0 else 'below'} — good risk/reward entry zone."
+            ),
+            "resistance":   nearest_resistance,
+            "support":      nearest_support or entry,
+            "current_price": price,
+        }
+
+    # ── DEFAULT: use current price ─────────────────────────────────────────────
+    return {
+        "entry":        price,
+        "entry_type":   "MARKET",
+        "entry_reason": "No clean chart level identified — entry at current market price.",
+        "resistance":   nearest_resistance,
+        "support":      nearest_support,
+        "current_price": price,
+    }
+
+
 def _ema(prices, period):
     if len(prices) < period:
         return None
@@ -265,17 +392,22 @@ def run_full_analysis(ticker, mode="SWING"):
     else:
         verdict, verdict_class = "AVOID", "avoid"
 
-    # ATR-based stops/targets
-    stop_swing    = round(price * 0.94, 2) if price else 0   # ~6% default
-    target_swing  = round(price * 1.20, 2) if price else 0   # 20%
-    stop_lt       = round(price * 0.83, 2) if price else 0   # ~17%
-    target_lt     = round(price * 1.75, 2) if price else 0   # 75%
+    # Planned entry from chart levels (breakout or pullback)
+    planned = calc_planned_entry(price, candles, ema20, ema50, atr)
+    entry   = planned["entry"]
 
-    if atr and price:
-        stop_swing   = round(price - 1.5 * atr, 2)
-        target_swing = round(price + 3.0 * atr, 2)
-        stop_lt      = round(price - 3.0 * atr, 2)
-        target_lt    = round(price + 8.0 * atr, 2)
+    # ATR-based stops/targets built from planned entry (not live price)
+    atr_val = atr or 0
+    if atr_val:
+        stop_swing   = round(entry - 1.5 * atr_val, 2)
+        target_swing = round(entry + 3.0 * atr_val, 2)
+        stop_lt      = round(entry - 3.0 * atr_val, 2)
+        target_lt    = round(entry + 8.0 * atr_val, 2)
+    else:
+        stop_swing   = round(entry * 0.94, 2)
+        target_swing = round(entry * 1.20, 2)
+        stop_lt      = round(entry * 0.83, 2)
+        target_lt    = round(entry * 1.75, 2)
 
     # Discipline checks
     no_earnings_risk = earnings_warning is None
@@ -310,8 +442,9 @@ def run_full_analysis(ticker, mode="SWING"):
             "ema20": ema20, "ema50": ema50, "ema200": ema200,
             "rsi": rsi, "atr": atr,
         },
+        "planned_entry": planned,
         "trade_setup": {
-            "entry":        price,
+            "entry":        entry,
             "stop_swing":   stop_swing,
             "target_swing": target_swing,
             "stop_lt":      stop_lt,

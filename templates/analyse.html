@@ -288,24 +288,33 @@ function renderResult(d) {
   document.getElementById('aiCard').style.display = aiHtml ? '' : 'none';
 
   // Trade setup
-  const t = d.trade || {};
-  const setupItems = d.mode === 'SWING' ? [
-    {label:'Entry',  val:'$' + fmt(t.entry),   color:''},
-    {label:'Stop',   val:'$' + fmt(t.stop),    color:'red'},
-    {label:'Target', val:'$' + fmt(t.target),  color:'green'},
-    {label:'R:R',    val: (t.r_r||0) + ':1',   color:'orange'},
-  ] : [
-    {label:'Entry',  val:'$' + fmt(t.entry),   color:''},
-    {label:'Stop',   val:'$' + fmt(t.stop),    color:'red'},
-    {label:'Target', val:'$' + fmt(t.target),  color:'green'},
-    {label:'R:R',    val: (t.r_r||0) + ':1',   color:'orange'},
+  const t  = d.trade || {};
+  const pe = d.planned_entry || {};
+  const entryType   = pe.entry_type || 'MARKET';
+  const entryReason = pe.entry_reason || '';
+  const livePrice   = d.price || 0;
+  const plannedEntry = t.entry || livePrice;
+  const entryDiff   = livePrice ? ((plannedEntry - livePrice) / livePrice * 100).toFixed(1) : 0;
+  const entryBadgeColor = entryType === 'BREAKOUT' ? 'var(--orange)' : entryType === 'PULLBACK' ? 'var(--blue)' : 'var(--text-muted)';
+
+  const setupItems = [
+    {label:'Live Price', val:'$' + fmt(livePrice),    color:''},
+    {label:'Plan Entry', val:'$' + fmt(plannedEntry) + (livePrice !== plannedEntry ? ` <span style="font-size:10px;color:var(--text-muted)">(${entryDiff > 0 ? '+' : ''}${entryDiff}%)</span>` : ''), color:'orange'},
+    {label:'Stop',       val:'$' + fmt(t.stop),       color:'red'},
+    {label:'Target',     val:'$' + fmt(t.target),     color:'green'},
+    {label:'R:R',        val:(t.r_r||0) + ':1',       color:'orange'},
   ];
-  document.getElementById('setupGrid').innerHTML = setupItems.map(s =>
-    `<div class="setup-item">
-      <div class="setup-label">${s.label}</div>
-      <div class="setup-val ${s.color}">${s.val}</div>
-    </div>`
-  ).join('');
+  document.getElementById('setupGrid').innerHTML =
+    `<div style="grid-column:1/-1;display:flex;align-items:center;gap:8px;margin-bottom:4px">
+      <span style="font-size:10px;font-weight:800;letter-spacing:.1em;padding:2px 8px;border-radius:4px;background:${entryBadgeColor}20;color:${entryBadgeColor};border:1px solid ${entryBadgeColor}40">${entryType}</span>
+      <span style="font-size:11px;color:var(--text-muted);line-height:1.4">${escHtml(entryReason)}</span>
+    </div>` +
+    setupItems.map(s =>
+      `<div class="setup-item">
+        <div class="setup-label">${s.label}</div>
+        <div class="setup-val ${s.color}">${s.val}</div>
+      </div>`
+    ).join('');
 
   document.getElementById('positionInfo').innerHTML =
     `<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:12px">

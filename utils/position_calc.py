@@ -41,28 +41,28 @@ def calc_position(price, stop, target, account_size, risk_pct, mode="SWING"):
     }
 
 
-def calc_swing_setup(price, atr, account_size=20000, risk_pct=2.0):
-    """Standard swing setup: 1.5×ATR stop, 3×ATR target."""
+def calc_swing_setup(planned_entry, atr, account_size=20000, risk_pct=2.0):
+    """Swing setup built from planned entry level (not live price)."""
     if not atr:
-        stop   = round(price * 0.94, 2)
-        target = round(price * 1.20, 2)
+        stop   = round(planned_entry * 0.94, 2)
+        target = round(planned_entry * 1.20, 2)
     else:
-        stop   = round(price - 1.5 * atr, 2)
-        target = round(price + 3.0 * atr, 2)
-    pos = calc_position(price, stop, target, account_size, risk_pct, "SWING")
-    return {"entry": price, "stop": stop, "target": target, **pos}
+        stop   = round(planned_entry - 1.5 * atr, 2)
+        target = round(planned_entry + 3.0 * atr, 2)
+    pos = calc_position(planned_entry, stop, target, account_size, risk_pct, "SWING")
+    return {"entry": planned_entry, "stop": stop, "target": target, **pos}
 
 
-def calc_lt_setup(price, atr, account_size=20000, position_pct=7.5):
-    """Long-term setup: wider stop (3×ATR), big target (8×ATR)."""
+def calc_lt_setup(planned_entry, atr, account_size=20000, position_pct=7.5):
+    """Long-term setup built from planned entry level (not live price)."""
     if not atr:
-        stop   = round(price * 0.83, 2)
-        target = round(price * 1.75, 2)
+        stop   = round(planned_entry * 0.83, 2)
+        target = round(planned_entry * 1.75, 2)
     else:
-        stop   = round(price - 3.0 * atr, 2)
-        target = round(price + 8.0 * atr, 2)
-    pos = calc_position(price, stop, target, account_size, position_pct, "LONG-TERM")
-    return {"entry": price, "stop": stop, "target": target, **pos}
+        stop   = round(planned_entry - 3.0 * atr, 2)
+        target = round(planned_entry + 8.0 * atr, 2)
+    pos = calc_position(planned_entry, stop, target, account_size, position_pct, "LONG-TERM")
+    return {"entry": planned_entry, "stop": stop, "target": target, **pos}
 
 
 def position_health(entry, current_price, stop, target, mode):
