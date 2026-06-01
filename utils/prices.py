@@ -86,47 +86,31 @@ _fund_cache = {}
 FUND_TTL = 3600  # 1 hour
 
 def get_fundamentals(ticker):
-    """Yahoo Finance quoteSummary — P/E, revenue growth, margins, 52wk."""
+    """Fundamentals via yfinance — P/E, revenue growth, margins, 52wk."""
     key = f"fund:{ticker}"
     now = time.time()
     if key in _fund_cache and now - _fund_cache[key]['ts'] < FUND_TTL:
         return _fund_cache[key]['data']
 
     try:
-        url = f"https://query1.finance.yahoo.com/v10/finance/quoteSummary/{ticker}"
-        params = {"modules": "defaultKeyStatistics,financialData,summaryDetail,price"}
-        r = requests.get(url, params=params,
-                         headers={"User-Agent": "Mozilla/5.0"}, timeout=8)
-        data = r.json()
-        summ = data.get("quoteSummary", {}).get("result", [{}])[0]
-
-        def _v(obj, key):
-            val = obj.get(key, {})
-            if isinstance(val, dict):
-                return val.get("raw")
-            return val
-
-        ks = summ.get("defaultKeyStatistics", {})
-        fd = summ.get("financialData", {})
-        sd = summ.get("summaryDetail", {})
-        pr = summ.get("price", {})
-
+        import yfinance as yf
+        info = yf.Ticker(ticker).info
         result = {
-            "pe_ratio":       _v(sd, "trailingPE"),
-            "forward_pe":     _v(ks, "forwardPE"),
-            "peg":            _v(ks, "pegRatio"),
-            "revenue_growth": _v(fd, "revenueGrowth"),
-            "earnings_growth":_v(fd, "earningsGrowth"),
-            "gross_margins":  _v(fd, "grossMargins"),
-            "profit_margins": _v(fd, "profitMargins"),
-            "market_cap":     _v(pr, "marketCap"),
-            "52wk_high":      _v(sd, "fiftyTwoWeekHigh"),
-            "52wk_low":       _v(sd, "fiftyTwoWeekLow"),
-            "short_float":    _v(ks, "shortPercentOfFloat"),
-            "beta":           _v(ks, "beta"),
-            "sector":         pr.get("sector", ""),
-            "industry":       pr.get("industry", ""),
-            "name":           pr.get("longName", ticker),
+            "pe_ratio":        info.get("trailingPE"),
+            "forward_pe":      info.get("forwardPE"),
+            "peg":             info.get("pegRatio"),
+            "revenue_growth":  info.get("revenueGrowth"),
+            "earnings_growth": info.get("earningsGrowth"),
+            "gross_margins":   info.get("grossMargins"),
+            "profit_margins":  info.get("profitMargins"),
+            "market_cap":      info.get("marketCap"),
+            "52wk_high":       info.get("fiftyTwoWeekHigh"),
+            "52wk_low":        info.get("fiftyTwoWeekLow"),
+            "short_float":     info.get("shortPercentOfFloat"),
+            "beta":            info.get("beta"),
+            "sector":          info.get("sector", ""),
+            "industry":        info.get("industry", ""),
+            "name":            info.get("longName", ticker),
         }
         _fund_cache[key] = {"data": result, "ts": now}
         return result
