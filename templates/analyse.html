@@ -366,32 +366,111 @@ function renderResult(d) {
     snEl.style.display = 'none';
   }
 
-  // Smart money detail — rich signals
-  const uw = (d.layers||{}).smart_money || {};
+  // Smart money — evidence section
+  const uw  = (d.layers||{}).smart_money || {};
+  const ev  = uw.evidence || {};
   const uwSignals = uw.signals || [];
-  if (uwSignals.length || (uw.notes && uw.notes.length)) {
-    document.getElementById('uwCard').style.display = '';
-    if (uwSignals.length) {
-      document.getElementById('uwDetail').innerHTML = uwSignals.map(s =>
-        `<div style="padding:10px 0;border-bottom:1px solid var(--border)">
-          <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
-            <span style="font-size:16px">${s.icon||'•'}</span>
-            <span style="font-size:12px;font-weight:700;color:${s.bullish?'var(--green)':s.bullish===false?'var(--red)':'var(--yellow)'}">${escHtml(s.text)}</span>
-          </div>
-          ${s.detail ? `<div style="font-size:11px;color:var(--text-muted);padding-left:24px">${escHtml(s.detail)}</div>` : ''}
-        </div>`
-      ).join('') + '<div style="font-size:10px;color:var(--text-muted);padding-top:8px">Data: Unusual Whales</div>';
-    } else {
-      document.getElementById('uwDetail').innerHTML = (uw.notes||[]).map(n =>
-        `<div class="check-row"><span class="check-pass">✓</span><span style="font-size:12px">${escHtml(n)}</span></div>`
-      ).join('');
-    }
-  } else if (!uw.available) {
-    document.getElementById('uwCard').style.display = '';
-    document.getElementById('uwDetail').innerHTML = '<div style="font-size:12px;color:var(--text-muted)">UW_API_KEY not configured — set in Azure settings</div>';
+  document.getElementById('uwCard').style.display = '';
+
+  if (!uw.available) {
+    document.getElementById('uwDetail').innerHTML =
+      '<div style="font-size:12px;color:var(--text-muted)">UW_API_KEY not configured</div>';
   } else {
-    document.getElementById('uwCard').style.display = '';
-    document.getElementById('uwDetail').innerHTML = '<div style="font-size:12px;color:var(--text-muted)">No unusual smart money activity detected</div>';
+    let html = '';
+
+    // ── Options flow evidence ──────────────────────────────────────────────
+    const flows = ev.flow || [];
+    if (flows.length) {
+      // Group: bullish calls at ask, bearish puts, other
+      const bullCalls = flows.filter(f => f.direction === 'BULLISH' && f.at_ask);
+      const bearPuts  = flows.filter(f => f.direction === 'BEARISH' && f.at_ask);
+      const other     = flows.filter(f => !f.at_ask);
+
+      const renderFlow = (items, label, color) => {
+        if (!items.length) return '';
+        const totalPrem = items.reduce((s,f) => s + (f.premium||0), 0);
+        const sweepCount = items.filter(f => f.is_sweep).length;
+        const openCount  = items.filter(f => f.opening).length;
+        const top = items.sort((a,b) => b.premium - a.premium)[0];
+        let line = `${items.length} ${label}: $${(totalPrem/1000).toFixed(0)}k premium`;
+        if (sweepCount) line += `, ${sweepCount} sweep${sweepCount>1?'s':''}`;
+        if (openCount)  line += `, ${openCount} opening`;
+        line += top.expiry ? ` · exp ${top.expiry}` : '';
+        line += top.strike ? ` · strike $${top.strike}` : '';
+        if (top.vol_oi_ratio) line += ` · vol/OI ${top.vol_oi_ratio}`;
+        return `<div style="padding:7px 0;border-bottom:1px solid var(--border)">
+          <span style="font-size:11px;font-weight:700;color:${color}">• ${escHtml(line)}</span>
+          <span style="font-size:10px;color:var(--text-muted);margin-left:6px">${top.at_ask?'at ASK — aggressive':'at BID'}</span>
+        </div>`;
+      };
+
+      html += renderFlow(bullCalls, 'bullish call(s) at ASK', 'var(--green)');
+      html += renderFlow(bearPuts,  'bearish put(s) at ASK',  'var(--red)');
+      if (other.length) {
+        html += `<div style="padding:5px 0;border-bottom:1px solid var(--border);font-size:11px;color:var(--text-muted)">• ${other.length} trade(s) at BID / passive</div>`;
+      }
+    } else {
+      html += `<div style="padding:5px 0;border-bottom:1px solid var(--border);font-size:11px;color:var(--text-muted)">• Options flow: no alerts in last session</div>`;
+    }
+
+    // ── Dark pool evidence ─────────────────────────────────────────────────
+    const dps = ev.darkpool || [];
+    if (dps.length) {
+      const bigDps = dps.filter(p => p.notional >= 1_000_000);
+      const totalNotional = dps.reduce((s,p) => s + p.notional, 0);
+      if (bigDps.length) {
+        const biggest = bigDps.sort((a,b) => b.notional - a.notional)[0];
+        const belowNote = biggest.below_mid === true ? ' — below midpoint (accumulation?)' : biggest.below_mid === false ? ' — above midpoint' : '';
+        html += `<div style="padding:7px 0;border-bottom:1px solid var(--border)">
+          <span style="font-size:11px;font-weight:700;color:var(--blue)">• Dark pool: ${bigDps.length} print(s) ≥$1M · largest ${biggest.shares.toLocaleString()} shares @ $${fmt(biggest.price)} ($${(biggest.notional/1e6).toFixed(1)}M${escHtml(belowNote)})</span>
+        </div>`;
+      } else {
+        html += `<div style="padding:5px 0;border-bottom:1px solid var(--border);font-size:11px;color:var(--text-muted)">• Dark pool: ${dps.length} print(s) · largest $${(Math.max(...dps.map(p=>p.notional))/1000).toFixed(0)}k (below $1M threshold)</div>`;
+      }
+    } else {
+      html += `<div style="padding:5px 0;border-bottom:1px solid var(--border);font-size:11px;color:var(--text-muted)">• Dark pool: no recent prints</div>`;
+    }
+
+    // ── GEX ───────────────────────────────────────────────────────────────
+    html += `<div style="padding:5px 0;border-bottom:1px solid var(--border);font-size:11px;color:var(--text-muted)">• GEX: ${escHtml(ev.gex||'not available on current plan')}</div>`;
+
+    // ── Insider ───────────────────────────────────────────────────────────
+    const ins = ev.insider || [];
+    const insBuys = ins.filter(i => i.is_buy && i.value >= 100000);
+    if (insBuys.length) {
+      const top = insBuys.sort((a,b) => b.value - a.value)[0];
+      html += `<div style="padding:7px 0;border-bottom:1px solid var(--border)">
+        <span style="font-size:11px;font-weight:700;color:var(--green)">• Insider buy: ${escHtml(top.who)}${top.role?' ('+escHtml(top.role)+')':''} · $${(top.value/1e6).toFixed(2)}M · ${escHtml(top.date)}</span>
+      </div>`;
+      if (insBuys.length > 1) {
+        html += `<div style="font-size:10px;color:var(--text-muted);padding:2px 0 5px 0">${insBuys.length} insider buy(s) total</div>`;
+      }
+    } else {
+      html += `<div style="padding:5px 0;border-bottom:1px solid var(--border);font-size:11px;color:var(--text-muted)">• Insider: none ≥$100k in recent filings${ins.length?' ('+ins.length+' filing(s) checked)':''}</div>`;
+    }
+
+    // ── Congress ──────────────────────────────────────────────────────────
+    const cong = ev.congress || [];
+    const congBuys = cong.filter(c => c.is_buy);
+    if (congBuys.length) {
+      const top = congBuys[0];
+      html += `<div style="padding:7px 0;border-bottom:1px solid var(--border)">
+        <span style="font-size:11px;font-weight:700;color:var(--yellow)">• Congress buy: ${escHtml(top.name)}${top.party?' ('+escHtml(top.party)+')':''} · ${escHtml(top.amount||'')} · ${escHtml(top.date||'')}</span>
+      </div>`;
+    } else {
+      html += `<div style="padding:5px 0;border-bottom:1px solid var(--border);font-size:11px;color:var(--text-muted)">• Congress/politician trades: none recent</div>`;
+    }
+
+    // ── Short interest ─────────────────────────────────────────────────────
+    if (ev.short_interest != null) {
+      const siColor = ev.short_interest > 20 ? 'var(--orange)' : 'var(--text-muted)';
+      html += `<div style="padding:5px 0;font-size:11px;color:${siColor}">• Short interest: ${ev.short_interest}% of float${ev.short_interest>20?' — squeeze potential':''}</div>`;
+    } else {
+      html += `<div style="padding:5px 0;font-size:11px;color:var(--text-muted)">• Short interest: not available on current plan</div>`;
+    }
+
+    html += '<div style="font-size:10px;color:var(--text-muted);margin-top:6px">Source: Unusual Whales</div>';
+    document.getElementById('uwDetail').innerHTML = html;
   }
 
   // Fundamentals

@@ -136,48 +136,82 @@ def uw_news_headlines():
 
 def smart_money_score(ticker):
     """
-    Returns {score: 0-20, notes: [...], signals: [...], available: bool}.
-    Scoring:
-      Large bullish call sweep at ask: +8
-      Dark pool print >$1M above price: +5
-      Insider buy >$100k last 30d: +4
-      Congress/politician buy recent: +3
-      Note: short squeeze potential (no score)
+    Returns {score, notes, signals, evidence, available}.
+    Scoring weights are unchanged. Evidence block added for display.
     """
     uw_key = os.environ.get("UW_API_KEY", UW_KEY)
     if not uw_key:
-        return {"score": 0, "notes": [], "signals": [], "available": False,
+        return {"score": 0, "notes": [], "signals": [], "evidence": {}, "available": False,
                 "detail": "UW_API_KEY not configured"}
 
     score   = 0
     notes   = []
-    signals = []  # detailed signals for display
+    signals = []
     raw     = {}
 
-    # ─── Options flow (try ticker-specific first, then global) ───────────────
+    # Evidence block — all raw data for display, no fabrication
+    evidence = {
+        "flow":           [],
+        "darkpool":       [],
+        "insider":        [],
+        "congress":       [],
+        "gex":            "not available on current plan",
+        "short_interest": None,
+    }
+
+    # ─── Options flow ─────────────────────────────────────────────────────────
     flow_data = uw_ticker_flow(ticker) or uw_flow_alerts(ticker)
     if flow_data:
         items = flow_data.get("data", flow_data if isinstance(flow_data, list) else [])
         bullish_sweeps = []
         for item in items[:25]:
-            put_call  = str(item.get("put_call", item.get("type", ""))).lower()
-            premium   = _sf(item.get("premium") or item.get("size") or item.get("total_premium", 0))
-            sentiment = str(item.get("sentiment", "")).lower()
-            execution = str(item.get("execution_estimate", "")).lower()
-            strike    = item.get("strike", item.get("strike_price", "?"))
-            expiry    = item.get("expiry", item.get("expiration_date", ""))
+            put_call = str(item.get("type", item.get("put_call", ""))).lower()
+            premium  = _sf(item.get("total_premium") or item.get("premium") or item.get("size", 0))
+            strike   = str(item.get("strike", item.get("strike_price", "?")))
+            expiry   = item.get("expiry", item.get("expiration_date", ""))
 
-            is_call    = "call" in put_call
-            is_bullish = "bullish" in sentiment or "bull" in sentiment
-            at_ask     = "ask" in execution or "above" in execution
+            # ASK vs BID — prefer direct fields, fallback to execution_estimate
+            ask_prem = _sf(item.get("total_ask_side_prem", 0))
+            bid_prem = _sf(item.get("total_bid_side_prem", 0))
+            if ask_prem or bid_prem:
+                at_ask = ask_prem >= bid_prem
+            else:
+                execution = str(item.get("execution_estimate", "")).lower()
+                at_ask = "ask" in execution or "above" in execution
 
+            is_sweep    = bool(item.get("has_sweep", False))
+            is_call     = "call" in put_call
+            is_put      = "put" in put_call
+            sentiment   = str(item.get("sentiment", "")).lower()
+            is_bullish  = "bullish" in sentiment or "bull" in sentiment or is_call
+
+            # Opening vs closing
+            all_opening = bool(item.get("all_opening_trades", False))
+            vol_oi      = _sf(item.get("volume_oi_ratio", 0))
+            is_opening  = all_opening or vol_oi > 1.0
+
+            alert_rule  = item.get("alert_rule", "")
+            trade_count = item.get("trade_count", 0) or item.get("trades", 0)
+
+            # Evidence item — every trade regardless of size threshold
+            evidence["flow"].append({
+                "direction":    "BULLISH" if (is_call or (is_bullish and not is_put)) else "BEARISH",
+                "type":         put_call or "unknown",
+                "at_ask":       at_ask,
+                "is_sweep":     is_sweep,
+                "premium":      premium,
+                "strike":       strike,
+                "expiry":       expiry,
+                "opening":      is_opening,
+                "vol_oi_ratio": round(vol_oi, 2) if vol_oi else None,
+                "alert_rule":   alert_rule,
+                "trade_count":  trade_count,
+            })
+
+            # Scoring: large bullish flow only (unchanged)
             if (is_call or is_bullish) and premium >= 500_000:
-                bullish_sweeps.append({
-                    "premium": premium,
-                    "strike": strike,
-                    "expiry": expiry,
-                    "at_ask": at_ask,
-                })
+                bullish_sweeps.append({"premium": premium, "strike": strike,
+                                       "expiry": expiry, "at_ask": at_ask})
 
         if bullish_sweeps:
             total = sum(s["premium"] for s in bullish_sweeps)
@@ -188,11 +222,8 @@ def smart_money_score(ticker):
                 note += f" (${best['strike']} strike)"
             notes.append(note)
             signals.append({
-                "type": "FLOW",
-                "icon": "🔥",
-                "text": note,
+                "type": "FLOW", "icon": "🔥", "text": note, "bullish": True,
                 "detail": f"Largest: ${best['premium']/1e6:.1f}M · Strike ${best['strike']} · Expiry {best['expiry']}",
-                "bullish": True,
             })
             raw["flow"] = bullish_sweeps
 
@@ -202,10 +233,28 @@ def smart_money_score(ticker):
         items = dp_data.get("data", dp_data if isinstance(dp_data, list) else [])
         big_prints = []
         for item in items[:15]:
-            size     = _sf(item.get("size") or item.get("notional_value") or item.get("premium", 0))
+            shares   = _sf(item.get("size", 0))
             dp_price = _sf(item.get("price", 0))
-            if size >= 1_000_000:
-                big_prints.append({"size": size, "price": dp_price})
+            notional = _sf(item.get("premium") or item.get("notional_value", 0))
+            if not notional and shares and dp_price:
+                notional = shares * dp_price
+            nbbo_bid = _sf(item.get("nbbo_bid", 0))
+            nbbo_ask = _sf(item.get("nbbo_ask", 0))
+            nbbo_mid = (nbbo_bid + nbbo_ask) / 2 if nbbo_bid and nbbo_ask else None
+
+            evidence["darkpool"].append({
+                "shares":    int(shares),
+                "price":     round(dp_price, 2),
+                "notional":  round(notional, 2),
+                "nbbo_bid":  nbbo_bid,
+                "nbbo_ask":  nbbo_ask,
+                "below_mid": (dp_price < nbbo_mid) if nbbo_mid else None,
+                "ext_hours": bool(item.get("ext_hour_sold_codes")),
+                "executed_at": item.get("executed_at", ""),
+            })
+
+            if notional >= 1_000_000:
+                big_prints.append({"size": notional, "price": dp_price, "shares": int(shares)})
 
         if big_prints:
             total = sum(p["size"] for p in big_prints)
@@ -214,26 +263,28 @@ def smart_money_score(ticker):
             notes.append(note)
             biggest = max(big_prints, key=lambda x: x["size"])
             signals.append({
-                "type": "DARKPOOL",
-                "icon": "🌊",
-                "text": note,
+                "type": "DARKPOOL", "icon": "🌊", "text": note, "bullish": True,
                 "detail": f"Largest: ${biggest['size']/1e6:.1f}M @ ${biggest['price']:.2f}",
-                "bullish": True,
             })
             raw["darkpool"] = big_prints
 
-    # ─── Insider transactions ─────────────────────────────────────────────────
+    # ─── Insider ──────────────────────────────────────────────────────────────
     ins_data = uw_insider(ticker)
     if ins_data:
         items = ins_data.get("data", ins_data if isinstance(ins_data, list) else [])
         insider_buys = []
-        cutoff = time.time() - 30 * 86400  # last 30 days
         for item in items[:15]:
             tx_type  = str(item.get("transaction_type", item.get("type", ""))).lower()
             value    = _sf(item.get("value") or item.get("shares_value") or item.get("total_value", 0))
             who      = item.get("insider_name", item.get("name", "Insider"))
             role     = item.get("title", item.get("insider_title", ""))
             date_str = item.get("filing_date", item.get("date", ""))
+
+            evidence["insider"].append({
+                "type": tx_type, "value": value, "who": who,
+                "role": role, "date": date_str,
+                "is_buy": "buy" in tx_type or "purchase" in tx_type,
+            })
 
             if ("buy" in tx_type or "purchase" in tx_type) and value >= 100_000:
                 insider_buys.append({"value": value, "who": who, "role": role, "date": date_str})
@@ -246,35 +297,38 @@ def smart_money_score(ticker):
                 note += f" ({biggest['role']})"
             notes.append(note)
             signals.append({
-                "type": "INSIDER",
-                "icon": "👔",
-                "text": note,
+                "type": "INSIDER", "icon": "👔", "text": note, "bullish": True,
                 "detail": f"Filed: {biggest['date']} · {len(insider_buys)} insider buy(s)",
-                "bullish": True,
             })
             raw["insider"] = insider_buys
 
-    # ─── Congress trades ──────────────────────────────────────────────────────
+    # ─── Congress ─────────────────────────────────────────────────────────────
     cong_data = uw_congress(ticker) or uw_congress_unusual(ticker)
     if cong_data:
         items = cong_data.get("data", cong_data if isinstance(cong_data, list) else [])
-        buys = [
-            i for i in items[:10]
-            if "buy" in str(i.get("transaction_type", "")).lower()
-            or "purchase" in str(i.get("transaction_type", "")).lower()
-        ]
+        for item in items[:10]:
+            tx = str(item.get("transaction_type", "")).lower()
+            evidence["congress"].append({
+                "name":   item.get("politician_name", item.get("name", "Unknown")),
+                "party":  item.get("party", ""),
+                "type":   tx,
+                "amount": item.get("amount", item.get("trade_size", "")),
+                "date":   item.get("transaction_date", item.get("date", "")),
+                "is_buy": "buy" in tx or "purchase" in tx,
+            })
+
+        buys = [i for i in items[:10]
+                if "buy" in str(i.get("transaction_type", "")).lower()
+                or "purchase" in str(i.get("transaction_type", "")).lower()]
         if buys:
             score += 3
-            name = buys[0].get("politician_name", buys[0].get("name", "Congress"))
+            name  = buys[0].get("politician_name", buys[0].get("name", "Congress"))
             party = buys[0].get("party", "")
-            note = f"Congress buy: {name}" + (f" ({party})" if party else "")
+            note  = f"Congress buy: {name}" + (f" ({party})" if party else "")
             notes.append(note)
             signals.append({
-                "type": "CONGRESS",
-                "icon": "🏛",
-                "text": note,
+                "type": "CONGRESS", "icon": "🏛", "text": note, "bullish": True,
                 "detail": f"{len(buys)} congressional purchase(s)",
-                "bullish": True,
             })
             raw["congress"] = buys
 
@@ -285,15 +339,13 @@ def smart_money_score(ticker):
         if isinstance(sdata, list) and sdata:
             sdata = sdata[0]
         short_float = _sf(sdata.get("short_float_pct", sdata.get("short_percent_of_float", 0)))
+        evidence["short_interest"] = round(short_float, 1) if short_float else None
         if short_float > 20:
             note = f"High short interest {short_float:.1f}% float — squeeze potential"
             notes.append(note)
             signals.append({
-                "type": "SHORT",
-                "icon": "⚡",
-                "text": note,
+                "type": "SHORT", "icon": "⚡", "text": note, "bullish": None,
                 "detail": f"Short float: {short_float:.1f}%",
-                "bullish": None,  # context, not directional
             })
             raw["shorts"] = short_float
 
@@ -301,6 +353,7 @@ def smart_money_score(ticker):
         "score":     min(score, 20),
         "notes":     notes,
         "signals":   signals,
+        "evidence":  evidence,
         "available": True,
         "raw":       raw,
     }

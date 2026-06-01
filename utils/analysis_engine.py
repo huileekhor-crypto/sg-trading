@@ -310,6 +310,7 @@ def layer6_smart_money(ticker):
         "max":       20,
         "notes":     result["notes"],
         "signals":   result.get("signals", []),
+        "evidence":  result.get("evidence", {}),
         "available": result["available"],
         "reason":    ", ".join(result["notes"]) if result["notes"] else "No unusual activity",
         "raw":       result.get("raw", {}),
