@@ -124,6 +124,7 @@
   <!-- Trade setup -->
   <div class="card" style="margin-bottom:12px">
     <div class="card-title">Trade Setup</div>
+    <div id="staleWarning" style="display:none;margin-bottom:10px"></div>
     <div class="setup-grid" id="setupGrid"></div>
     <div style="margin-top:12px" id="positionInfo"></div>
     <div style="margin-top:12px">
@@ -222,11 +223,30 @@ function renderResult(d) {
   chgEl.textContent = (chg >= 0 ? '+' : '') + fmt(chg, 2) + '% today';
   chgEl.className = 'price-change ' + (chg >= 0 ? 'pos' : 'neg');
 
-  let prePost = '';
-  if (pd.pre_price) prePost = `Pre-mkt $${fmt(pd.pre_price)} · `;
-  if (pd.post_price) prePost += `After $${fmt(pd.post_price)} · `;
-  if (pd.market_state) prePost += pd.market_state;
-  document.getElementById('rPrePost').textContent = prePost;
+  // Extended-hours price + session label
+  const ss = d.stale_setup || {};
+  const sessionLabel = ss.session_label || pd.market_state || '';
+  let prePost = sessionLabel ? `<span style="color:var(--text-muted)">${sessionLabel}</span>` : '';
+  if (ss.extended_price) {
+    const epct = ss.extended_pct || 0;
+    const ecolor = epct > 0 ? 'var(--green)' : epct < 0 ? 'var(--red)' : 'var(--text-muted)';
+    prePost += ` · <span style="font-family:'DM Mono',monospace;color:${ecolor}">$${fmt(ss.extended_price)} (${epct > 0 ? '+' : ''}${fmt(epct,1)}%)</span>`;
+  }
+  document.getElementById('rPrePost').innerHTML = prePost;
+
+  // Stale setup warning on Trade Setup card
+  const staleEl = document.getElementById('staleWarning');
+  if (ss.stale) {
+    staleEl.style.display = '';
+    staleEl.innerHTML = `<div style="background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.3);border-radius:8px;padding:10px 12px;font-size:12px;font-weight:600;color:var(--red);line-height:1.5">
+      ${escHtml(ss.message)}
+    </div>`;
+  } else if (ss.message) {
+    staleEl.style.display = '';
+    staleEl.innerHTML = `<div style="font-size:11px;color:var(--green);opacity:.8">✓ ${escHtml(ss.message)}</div>`;
+  } else {
+    staleEl.style.display = 'none';
+  }
 
   // Layers
   const layers = d.layers || {};

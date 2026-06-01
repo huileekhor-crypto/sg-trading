@@ -6,6 +6,79 @@ from utils.position_calc import calc_swing_setup, calc_lt_setup
 from utils.senior_trader import generate_analysis
 from models.journal import get_settings
 
+
+def _stale_check(ticker, price_data):
+    """
+    Compare extended-hours price (pre/post market) to regular-session close.
+    UW has no price data — Yahoo Finance is the only source.
+    Returns dict with stale flag, extended price, session label, and message.
+    """
+    reg_price  = price_data.get("price", 0)
+    pre_price  = price_data.get("pre_price")
+    post_price = price_data.get("post_price")
+    mkt_state  = price_data.get("market_state", "CLOSED")
+
+    # Map Yahoo marketState to human label (shown in SGT context)
+    session_labels = {
+        "REGULAR": "Regular session",
+        "PRE":     "Pre-market",
+        "PREPRE":  "Pre-market",
+        "POST":    "After-hours",
+        "POSTPOST":"After-hours",
+        "CLOSED":  "Market closed",
+    }
+    session_label = session_labels.get(mkt_state, mkt_state or "Unknown")
+
+    # Pick the relevant extended price
+    if mkt_state in ("PRE", "PREPRE") and pre_price:
+        ext_price = pre_price
+    elif mkt_state in ("POST", "POSTPOST") and post_price:
+        ext_price = post_price
+    elif pre_price:   # CLOSED but pre-market data available (early morning)
+        ext_price = pre_price
+    elif post_price:  # CLOSED but post-market data available (overnight)
+        ext_price = post_price
+    else:
+        ext_price = None
+
+    if mkt_state == "REGULAR":
+        return {
+            "stale": False, "extended_price": None, "extended_pct": 0,
+            "session_label": session_label,
+            "message": "Prices current — live regular session",
+            "source": "Yahoo Finance",
+        }
+
+    if not ext_price or not reg_price:
+        return {
+            "stale": False, "extended_price": None, "extended_pct": 0,
+            "session_label": session_label,
+            "message": "Prices current — no extended-hours data available",
+            "source": "Yahoo Finance",
+        }
+
+    pct = (ext_price - reg_price) / reg_price * 100
+    sign = "+" if pct >= 0 else ""
+    stale = abs(pct) > 1.0
+
+    if stale:
+        msg = (
+            f"⚠ STALE: {ticker} is ${ext_price:.2f} in {session_label.lower()} "
+            f"({sign}{pct:.1f}% vs ${reg_price:.2f} this setup is based on). "
+            f"Recalculate before trading."
+        )
+    else:
+        msg = f"Prices current ({sign}{pct:.1f}% in {session_label.lower()})"
+
+    return {
+        "stale":          stale,
+        "extended_price": ext_price,
+        "extended_pct":   round(pct, 2),
+        "session_label":  session_label,
+        "message":        msg,
+        "source":         "Yahoo Finance (UW has no price data on this plan)",
+    }
+
 analyse_bp = Blueprint("analyse", __name__)
 
 
@@ -69,6 +142,8 @@ def analyse():
     pot_gain = trade.get("potential_gain", 0)
     weekly_pct = round(pot_gain / weekly_target * 100, 1) if weekly_target else 0
 
+    stale = _stale_check(ticker, analysis["price_data"])
+
     entry_type = planned.get("entry_type", "MARKET")
     ibkr_order = (
         f"Buy {trade.get('shares', 0)} {ticker} "
@@ -99,5 +174,6 @@ def analyse():
         "ibkr_order":       ibkr_order,
         "earnings_warning": analysis.get("earnings_warning"),
         "seasonality_note": analysis.get("seasonality_note"),
+        "stale_setup":      stale,
         "settings":         {"account": account, "risk": risk, "weekly": weekly_target},
     })
