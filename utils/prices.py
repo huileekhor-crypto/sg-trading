@@ -2,7 +2,6 @@ import requests
 import time
 import os
 
-FINNHUB_KEY = os.environ.get("FINNHUB_API_KEY", "")
 _price_cache = {}  # {ticker: {data, ts}}
 PRICE_TTL = 8      # seconds
 
@@ -58,7 +57,8 @@ def get_candles(ticker, days=60):
     if key in _candle_cache and now - _candle_cache[key]['ts'] < CANDLE_TTL:
         return _candle_cache[key]['data']
 
-    if not FINNHUB_KEY:
+    finnhub_key = os.environ.get("FINNHUB_API_KEY", "")
+    if not finnhub_key:
         return []
     try:
         end   = int(now)
@@ -66,7 +66,7 @@ def get_candles(ticker, days=60):
         url = "https://finnhub.io/api/v1/stock/candle"
         r = requests.get(url, params={
             "symbol": ticker, "resolution": "D",
-            "from": start, "to": end, "token": FINNHUB_KEY
+            "from": start, "to": end, "token": finnhub_key
         }, timeout=10)
         d = r.json()
         if d.get("s") != "ok" or not d.get("c"):
@@ -136,7 +136,8 @@ def get_fundamentals(ticker):
 
 def get_news(ticker, count=5):
     """Finnhub company news — last 7 days."""
-    if not FINNHUB_KEY:
+    finnhub_key = os.environ.get("FINNHUB_API_KEY", "")
+    if not finnhub_key:
         return []
     try:
         import datetime
@@ -144,7 +145,7 @@ def get_news(ticker, count=5):
         from_date = (datetime.date.today() - datetime.timedelta(days=7)).isoformat()
         url = "https://finnhub.io/api/v1/company-news"
         r = requests.get(url, params={
-            "symbol": ticker, "from": from_date, "to": to_date, "token": FINNHUB_KEY
+            "symbol": ticker, "from": from_date, "to": to_date, "token": finnhub_key
         }, timeout=8)
         news = r.json()
         if isinstance(news, list):

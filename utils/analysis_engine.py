@@ -196,7 +196,7 @@ def run_full_analysis(ticker, mode="SWING"):
     from utils.unusual_whales import get_earnings_warning, get_seasonality_note
     # Fetch data
     price_data   = get_live_price(ticker)
-    candles      = get_candles(ticker, days=65)
+    candles      = get_candles(ticker, days=300)
     news_items   = get_news(ticker, count=5)
     fundamentals = get_fundamentals(ticker)
     # Earnings warning + seasonality (non-blocking)
@@ -328,7 +328,7 @@ def run_full_analysis(ticker, mode="SWING"):
 def quick_score(ticker):
     """Fast score using only first 4 layers (for batch scanning)."""
     try:
-        candles = get_candles(ticker, days=65)
+        candles = get_candles(ticker, days=300)
         price_d = get_live_price(ticker)
         price   = price_d.get("price", 0)
         vol     = price_d.get("volume", 0)
