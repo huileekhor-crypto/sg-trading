@@ -60,10 +60,29 @@
   transition: width .3s;
 }
 .scan-status { font-size: 12px; color: var(--text-muted); }
+.sector-chip {
+  display:inline-flex; flex-direction:column; gap:2px;
+  padding:7px 10px; border-radius:8px; border:1px solid;
+  min-width:90px; cursor:default;
+}
+.sector-chip.bull { background:rgba(34,197,94,.07); border-color:rgba(34,197,94,.25); }
+.sector-chip.bear { background:rgba(239,68,68,.07);  border-color:rgba(239,68,68,.25); }
+.sector-chip.neut { background:var(--bg3);           border-color:var(--border); }
+.sector-name  { font-size:10px; font-weight:700; letter-spacing:.04em; }
+.sector-etf   { font-size:9px;  color:var(--text-muted); }
+.sector-stat  { font-size:10px; font-family:'DM Mono',monospace; font-weight:700; }
+.sector-flow  { font-size:9px;  color:var(--text-muted); margin-top:1px; }
 </style>
 {% endblock %}
 
 {% block content %}
+<!-- Sector Flow Panel -->
+<div id="sectorFlowCard" class="card" style="margin-bottom:16px;display:none">
+  <div style="font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--text-muted);margin-bottom:10px">📊 Sector Flow (Unusual Whales)</div>
+  <div id="sectorFlowGrid" style="display:flex;flex-wrap:wrap;gap:6px"></div>
+  <div style="font-size:9px;color:var(--text-muted);margin-top:8px">Call% = bullish premium / total premium · Flow = 5-day ETF share flow · sorted by bullishness</div>
+</div>
+
 <!-- Market Regime Banner -->
 <div id="regimeBanner" style="margin-bottom:16px;display:none">
   <div id="regimeCard" class="card" style="display:flex;align-items:center;gap:12px">
@@ -277,6 +296,38 @@ function tryParseObj(v) {
   try { return JSON.parse(v); } catch { return null; }
 }
 
+async function loadSectorFlow() {
+  const d = await api('/api/scan/sector-flow');
+  if (!d || !d.sectors || !d.sectors.length) return;
+
+  const card = document.getElementById('sectorFlowCard');
+  const grid = document.getElementById('sectorFlowGrid');
+  card.style.display = '';
+
+  // Exclude SPY (market-wide), show sectors only
+  const sectors = d.sectors.filter(s => s.ticker !== 'SPY');
+
+  grid.innerHTML = sectors.map(s => {
+    const cls  = s.sentiment === 'BULLISH' ? 'bull' : s.sentiment === 'BEARISH' ? 'bear' : 'neut';
+    const icon = s.sentiment === 'BULLISH' ? '▲' : s.sentiment === 'BEARISH' ? '▼' : '–';
+    const nameColor = s.sentiment === 'BULLISH' ? 'var(--green)' : s.sentiment === 'BEARISH' ? 'var(--red)' : 'var(--text-muted)';
+    const flowAbs = Math.abs(s.etf_flow_5d);
+    const flowStr = flowAbs >= 1e6
+      ? (s.etf_flow_5d > 0 ? '+' : '-') + (flowAbs/1e6).toFixed(1) + 'M flow'
+      : flowAbs >= 1000
+      ? (s.etf_flow_5d > 0 ? '+' : '-') + (flowAbs/1000).toFixed(0) + 'K flow'
+      : 'flat flow';
+    return `<div class="sector-chip ${cls}" title="${s.name} (${s.ticker}) · Call/Put ratio: ${s.cp_ratio} · Call vs 30d avg: ${s.call_vs30}x">
+      <div class="sector-name" style="color:${nameColor}">${icon} ${s.name}</div>
+      <div class="sector-etf">${s.ticker}</div>
+      <div class="sector-stat" style="color:${nameColor}">${s.call_pct}% bull</div>
+      <div class="sector-flow">${flowStr}</div>
+    </div>`;
+  }).join('');
+}
+
 loadResults();
+loadRegime();
+loadSectorFlow();
 </script>
 {% endblock %}

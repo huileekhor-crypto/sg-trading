@@ -127,6 +127,80 @@ def uw_gex(ticker):
     return _get(f"/api/stock/{ticker}/greek-exposure", ttl=300)
 
 
+def uw_sector_etfs():
+    """All 11 SPDR sector ETFs with options flow and money-flow data."""
+    return _get("/api/market/sector-etfs", ttl=300)
+
+
+def get_sector_flow():
+    """
+    Process sector ETF data into scored, ranked sector flow summary.
+    Returns list of dicts sorted by bullishness descending.
+    """
+    data = uw_sector_etfs()
+    if not data:
+        return []
+
+    # ETF → readable sector name map (override UW's full_name where needed)
+    etf_names = {
+        "XLK": "Technology", "XLF": "Financials", "XLV": "Healthcare",
+        "XLE": "Energy",      "XLI": "Industrials","XLB": "Materials",
+        "XLP": "Cons. Staples","XLY": "Cons. Discr.","XLC": "Comm. Services",
+        "XLRE":"Real Estate", "XLU": "Utilities",  "SPY": "S&P 500",
+    }
+
+    results = []
+    for item in data.get("data", []):
+        ticker = item.get("ticker", "")
+        if not ticker:
+            continue
+
+        bull_prem  = _sf(item.get("bullish_premium", 0))
+        bear_prem  = _sf(item.get("bearish_premium", 0))
+        call_vol   = _sf(item.get("call_volume", 0))
+        put_vol    = _sf(item.get("put_volume", 0))
+        avg30_call = _sf(item.get("avg30_call_volume", item.get("avg_30_day_call_volume", 0)))
+
+        total_prem = bull_prem + bear_prem
+        call_pct   = round(bull_prem / total_prem * 100, 1) if total_prem else 50.0
+        cp_ratio   = round(call_vol / put_vol, 2) if put_vol else 0
+        call_vs30  = round(call_vol / avg30_call, 2) if avg30_call else 1.0
+
+        # 5-day ETF share flow (positive = money flowing in)
+        raw_flow = item.get("in_out_flow", [])
+        if isinstance(raw_flow, list):
+            etf_flow_5d = sum(
+                _sf(f.get("change", 0)) if isinstance(f, dict) else 0
+                for f in raw_flow
+            )
+        else:
+            etf_flow_5d = 0
+
+        # Sentiment
+        if call_pct >= 55 or (call_pct >= 50 and etf_flow_5d > 0):
+            sentiment = "BULLISH"
+        elif call_pct <= 45 or (call_pct < 50 and etf_flow_5d < 0):
+            sentiment = "BEARISH"
+        else:
+            sentiment = "NEUTRAL"
+
+        results.append({
+            "ticker":       ticker,
+            "name":         etf_names.get(ticker, item.get("full_name", ticker)),
+            "last":         _sf(item.get("last", 0)),
+            "call_pct":     call_pct,       # % of premium that is bullish
+            "cp_ratio":     cp_ratio,        # call/put volume ratio
+            "call_vs30":    call_vs30,       # today call vol vs 30d avg
+            "etf_flow_5d":  int(etf_flow_5d),  # shares net flow last 5 days
+            "bull_prem":    round(bull_prem),
+            "bear_prem":    round(bear_prem),
+            "sentiment":    sentiment,
+        })
+
+    results.sort(key=lambda x: x["call_pct"], reverse=True)
+    return results
+
+
 def uw_seasonality(ticker):
     """Monthly seasonality for ticker."""
     return _get(f"/api/seasonality/{ticker}/monthly", ttl=86400)
