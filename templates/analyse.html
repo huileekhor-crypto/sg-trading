@@ -89,7 +89,7 @@
         <span id="rPrice" class="price-big"></span>
         <span id="rChange" class="price-change" style="font-size:13px"></span>
       </div>
-      <div id="rPrePost" style="font-size:11px;color:var(--text-muted);margin-top:2px"></div>
+      <div id="rPrePost" style="margin-top:4px"></div>
     </div>
     <div style="text-align:right">
       <div id="rScore" style="font-family:'DM Mono',monospace;font-size:32px;font-weight:700"></div>
@@ -223,16 +223,29 @@ function renderResult(d) {
   chgEl.textContent = (chg >= 0 ? '+' : '') + fmt(chg, 2) + '% today';
   chgEl.className = 'price-change ' + (chg >= 0 ? 'pos' : 'neg');
 
-  // Extended-hours price + session label
+  // Extended-hours price — show prominently when pre/post market data is available
   const ss = d.stale_setup || {};
   const sessionLabel = ss.session_label || pd.market_state || '';
-  let prePost = sessionLabel ? `<span style="color:var(--text-muted)">${sessionLabel}</span>` : '';
+  const prePostEl = document.getElementById('rPrePost');
   if (ss.extended_price) {
     const epct = ss.extended_pct || 0;
     const ecolor = epct > 0 ? 'var(--green)' : epct < 0 ? 'var(--red)' : 'var(--text-muted)';
-    prePost += ` · <span style="font-family:'DM Mono',monospace;color:${ecolor}">$${fmt(ss.extended_price)} (${epct > 0 ? '+' : ''}${fmt(epct,1)}%)</span>`;
+    const sign = epct >= 0 ? '+' : '';
+    const isPre = sessionLabel.toLowerCase().includes('pre');
+    const icon = isPre ? '🌅' : '🌙';
+    const label = sessionLabel || (isPre ? 'Pre-market' : 'After-hours');
+    prePostEl.innerHTML = `
+      <div style="display:flex;align-items:baseline;gap:6px;flex-wrap:wrap">
+        <span style="font-size:11px;color:var(--text-muted);white-space:nowrap">${icon} ${label}</span>
+        <span style="font-family:'DM Mono',monospace;font-size:18px;font-weight:700;color:${ecolor}">$${fmt(ss.extended_price)}</span>
+        <span style="font-size:13px;font-weight:600;color:${ecolor}">${sign}${fmt(epct,1)}%</span>
+        <span style="font-size:11px;color:var(--text-muted)">vs close $${fmt(d.price)}</span>
+      </div>`;
+  } else {
+    prePostEl.innerHTML = sessionLabel
+      ? `<span style="font-size:11px;color:var(--text-muted)">${sessionLabel}</span>`
+      : '';
   }
-  document.getElementById('rPrePost').innerHTML = prePost;
 
   // Stale setup warning on Trade Setup card
   const staleEl = document.getElementById('staleWarning');
