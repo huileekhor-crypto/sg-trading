@@ -50,36 +50,59 @@ def get_live_price(ticker):
 _candle_cache = {}
 CANDLE_TTL = 300  # 5 min
 
-def get_candles(ticker, days=60):
-    """Finnhub daily candles — returns list of {t, o, h, l, c, v}."""
+def get_candles(ticker, days=300):
+    """Daily OHLCV candles — yfinance primary, Finnhub fallback.
+    Returns list of {t, o, h, l, c, v} sorted oldest-first."""
     key = f"candles:{ticker}:{days}"
     now = time.time()
     if key in _candle_cache and now - _candle_cache[key]['ts'] < CANDLE_TTL:
         return _candle_cache[key]['data']
 
-    finnhub_key = os.environ.get("FINNHUB_API_KEY", "")
-    if not finnhub_key:
-        return []
+    # Primary: yfinance handles Yahoo auth automatically, free, full history
     try:
-        end   = int(now)
-        start = end - days * 86400
-        url = "https://finnhub.io/api/v1/stock/candle"
-        r = requests.get(url, params={
-            "symbol": ticker, "resolution": "D",
-            "from": start, "to": end, "token": finnhub_key
-        }, timeout=10)
-        d = r.json()
-        if d.get("s") != "ok" or not d.get("c"):
-            return []
-        candles = [
-            {"t": d["t"][i], "o": d["o"][i], "h": d["h"][i],
-             "l": d["l"][i], "c": d["c"][i], "v": d["v"][i]}
-            for i in range(len(d["c"]))
-        ]
-        _candle_cache[key] = {"data": candles, "ts": now}
-        return candles
+        import yfinance as yf
+        period = "2y" if days >= 500 else "1y" if days >= 250 else "6mo"
+        hist = yf.Ticker(ticker).history(period=period)
+        if not hist.empty:
+            candles = [
+                {
+                    "t": int(ts.timestamp()),
+                    "o": round(float(row.Open),  4),
+                    "h": round(float(row.High),  4),
+                    "l": round(float(row.Low),   4),
+                    "c": round(float(row.Close), 4),
+                    "v": int(row.Volume),
+                }
+                for ts, row in hist.iterrows()
+            ]
+            _candle_cache[key] = {"data": candles, "ts": now}
+            return candles
     except Exception:
-        return []
+        pass
+
+    # Fallback: Finnhub (free tier may 403, but worth trying)
+    finnhub_key = os.environ.get("FINNHUB_API_KEY", "")
+    if finnhub_key:
+        try:
+            end   = int(now)
+            start = end - days * 86400
+            r = requests.get("https://finnhub.io/api/v1/stock/candle", params={
+                "symbol": ticker, "resolution": "D",
+                "from": start, "to": end, "token": finnhub_key
+            }, timeout=10)
+            d = r.json()
+            if d.get("s") == "ok" and d.get("c"):
+                candles = [
+                    {"t": d["t"][i], "o": d["o"][i], "h": d["h"][i],
+                     "l": d["l"][i], "c": d["c"][i], "v": d["v"][i]}
+                    for i in range(len(d["c"]))
+                ]
+                _candle_cache[key] = {"data": candles, "ts": now}
+                return candles
+        except Exception:
+            pass
+
+    return []
 
 
 _fund_cache = {}
