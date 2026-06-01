@@ -117,6 +117,11 @@ def uw_earnings_estimates(ticker):
     return _get(f"/api/companies/{ticker}/earnings-estimates")
 
 
+def uw_ticker_earnings(ticker):
+    """Full earnings history + upcoming for ticker — /api/stock/{ticker}/earnings."""
+    return _get(f"/api/stock/{ticker}/earnings", ttl=3600)
+
+
 def uw_seasonality(ticker):
     """Monthly seasonality for ticker."""
     return _get(f"/api/seasonality/{ticker}/monthly", ttl=86400)
@@ -347,10 +352,44 @@ def get_market_regime():
 
 
 def get_earnings_warning(ticker):
-    """Check if earnings within 7 days — returns warning string or None."""
+    """Check if earnings within 14 days — returns warning string or None."""
     import datetime
-    today = datetime.date.today()
+    today  = datetime.date.today()
+    window = 14  # warn 14 days in advance
 
+    # Primary: per-ticker earnings calendar (has future dates)
+    data = uw_ticker_earnings(ticker)
+    if data:
+        items = data.get("data", data if isinstance(data, list) else [])
+        for item in items:
+            # Only upcoming (unreported) earnings
+            if item.get("reported_eps") is not None:
+                continue
+            date_str = item.get("report_date", "")
+            if not date_str:
+                continue
+            try:
+                earn_date = datetime.date.fromisoformat(date_str[:10])
+                days_away = (earn_date - today).days
+                if -1 <= days_away <= window:
+                    timing = item.get("report_time") or "TBC"
+                    timing = timing.replace("postmarket", "AMC").replace("premarket", "BMO")
+                    if days_away <= 0:
+                        when = "TODAY" if days_away == 0 else "YESTERDAY"
+                    elif days_away == 1:
+                        when = "TOMORROW"
+                    else:
+                        when = f"in {days_away}d ({earn_date.strftime('%b %d')})"
+                    est_eps = item.get("estimated_eps")
+                    eps_str = f" — est. EPS ${est_eps}" if est_eps else ""
+                    return (
+                        f"⚠ EARNINGS {when} ({timing}){eps_str} — "
+                        f"wait for reaction, don't enter before"
+                    )
+            except Exception:
+                pass
+
+    # Fallback: today's premarket / afterhours lists
     for fetch_fn in [uw_earnings_premarket, uw_earnings_afterhours]:
         data = fetch_fn()
         if not data:
@@ -358,29 +397,16 @@ def get_earnings_warning(ticker):
         items = data.get("data", data if isinstance(data, list) else [])
         for item in items:
             t = str(item.get("ticker", item.get("symbol", ""))).upper()
-            if t == ticker.upper():
-                date_str = item.get("date", item.get("earnings_date", ""))
-                try:
-                    earn_date = datetime.date.fromisoformat(date_str[:10])
-                    days_away = (earn_date - today).days
-                    if -1 <= days_away <= 7:
-                        timing = item.get("time", "AMC")
-                        when   = "today" if days_away == 0 else f"in {days_away}d"
-                        return f"⚠ EARNINGS {when} ({timing}) — wait for reaction, don't enter before"
-                except Exception:
-                    pass
-
-    # Check estimates endpoint as fallback
-    est = uw_earnings_estimates(ticker)
-    if est:
-        items = est.get("data", []) if isinstance(est, dict) else []
-        for item in items[:3]:
-            date_str = item.get("date", item.get("earnings_date", ""))
+            if t != ticker.upper():
+                continue
+            date_str = item.get("report_date", item.get("date", ""))
             try:
                 earn_date = datetime.date.fromisoformat(date_str[:10])
                 days_away = (earn_date - today).days
-                if 0 <= days_away <= 7:
-                    return f"⚠ EARNINGS in {days_away}d — high risk, wait for reaction"
+                if -1 <= days_away <= window:
+                    timing = item.get("report_time", item.get("time", "TBC"))
+                    when   = "TODAY" if days_away == 0 else f"in {days_away}d"
+                    return f"⚠ EARNINGS {when} ({timing}) — wait for reaction, don't enter before"
             except Exception:
                 pass
 
