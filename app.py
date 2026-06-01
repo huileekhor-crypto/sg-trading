@@ -7,6 +7,7 @@ from routes.analyse import analyse_bp
 from routes.manage import manage_bp
 from routes.journal import journal_bp
 from routes.backtest import backtest_bp
+from routes.breakout import breakout_bp
 from routes.settings import settings_bp
 from models.user import init_db
 from models.journal import init_journal_db
@@ -16,7 +17,7 @@ app = Flask(__name__, template_folder='templates', static_folder='static')
 CORS(app)
 
 app.secret_key = os.environ.get('SECRET_KEY', 'change-this-in-azure-settings')
-app.config['SESSION_COOKIE_SECURE']   = True
+app.config['SESSION_COOKIE_SECURE'] = True
 app.config['SESSION_COOKIE_HTTPONLY'] = True
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 
@@ -26,11 +27,13 @@ app.register_blueprint(analyse_bp)
 app.register_blueprint(manage_bp)
 app.register_blueprint(journal_bp)
 app.register_blueprint(backtest_bp)
+app.register_blueprint(breakout_bp)
 app.register_blueprint(settings_bp)
 
 
 def login_required(f):
     from functools import wraps
+
     @wraps(f)
     def decorated(*args, **kwargs):
         if 'user_id' not in session:

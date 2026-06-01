@@ -420,11 +420,12 @@ body {
     <a href="/scan" class="top-logo">SG<span>.</span>TRADING</a>
 
     <nav class="desktop-nav">
-      <a href="/scan"     class="nav-link {% if active=='scan' %}active{% endif %}">🔍 Scan</a>
-      <a href="/analyse"  class="nav-link {% if active=='analyse' %}active{% endif %}">📊 Analyse</a>
-      <a href="/manage"   class="nav-link {% if active=='manage' %}active{% endif %}">⚡ Manage</a>
-      <a href="/journal"  class="nav-link {% if active=='journal' %}active{% endif %}">📔 Journal</a>
-      <a href="/settings" class="nav-link {% if active=='settings' %}active{% endif %}">⚙</a>
+      <a href="/scan"             class="nav-link {% if active=='scan' %}active{% endif %}">🔍 Scan</a>
+      <a href="/analyse"          class="nav-link {% if active=='analyse' %}active{% endif %}">📊 Analyse</a>
+      <a href="/weekly-breakout"  class="nav-link {% if active=='breakout' %}active{% endif %}">📈 Breakout</a>
+      <a href="/manage"           class="nav-link {% if active=='manage' %}active{% endif %}">⚡ Manage</a>
+      <a href="/journal"          class="nav-link {% if active=='journal' %}active{% endif %}">📔 Journal</a>
+      <a href="/settings"         class="nav-link {% if active=='settings' %}active{% endif %}">⚙</a>
     </nav>
 
     <div class="top-user">
@@ -441,16 +442,19 @@ body {
 
   <!-- Mobile bottom nav -->
   <nav class="bottom-nav">
-    <a href="/scan"    class="bottom-nav-item {% if active=='scan' %}active{% endif %}">
+    <a href="/scan"            class="bottom-nav-item {% if active=='scan' %}active{% endif %}">
       <span class="icon">🔍</span><span>Scan</span>
     </a>
-    <a href="/analyse" class="bottom-nav-item {% if active=='analyse' %}active{% endif %}">
+    <a href="/analyse"         class="bottom-nav-item {% if active=='analyse' %}active{% endif %}">
       <span class="icon">📊</span><span>Analyse</span>
     </a>
-    <a href="/manage"  class="bottom-nav-item {% if active=='manage' %}active{% endif %}">
+    <a href="/weekly-breakout" class="bottom-nav-item {% if active=='breakout' %}active{% endif %}">
+      <span class="icon">📈</span><span>Breakout</span>
+    </a>
+    <a href="/manage"          class="bottom-nav-item {% if active=='manage' %}active{% endif %}">
       <span class="icon">⚡</span><span>Manage</span>
     </a>
-    <a href="/journal" class="bottom-nav-item {% if active=='journal' %}active{% endif %}">
+    <a href="/journal"         class="bottom-nav-item {% if active=='journal' %}active{% endif %}">
       <span class="icon">📔</span><span>Journal</span>
     </a>
   </nav>
