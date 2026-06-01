@@ -184,14 +184,20 @@ def get_sector_flow():
         else:
             sentiment = "NEUTRAL"
 
+        # Price performance vs prev close
+        last       = _sf(item.get("last", 0))
+        prev_close = _sf(item.get("prev_close", 0))
+        chg_pct    = round((last - prev_close) / prev_close * 100, 2) if prev_close else 0.0
+
         results.append({
             "ticker":       ticker,
             "name":         etf_names.get(ticker, item.get("full_name", ticker)),
-            "last":         _sf(item.get("last", 0)),
-            "call_pct":     call_pct,       # % of premium that is bullish
-            "cp_ratio":     cp_ratio,        # call/put volume ratio
-            "call_vs30":    call_vs30,       # today call vol vs 30d avg
-            "etf_flow_5d":  int(etf_flow_5d),  # shares net flow last 5 days
+            "last":         last,
+            "chg_pct":      chg_pct,         # price % change today
+            "call_pct":     call_pct,
+            "cp_ratio":     cp_ratio,
+            "call_vs30":    call_vs30,
+            "etf_flow_5d":  int(etf_flow_5d),
             "bull_prem":    round(bull_prem),
             "bear_prem":    round(bear_prem),
             "sentiment":    sentiment,
@@ -199,6 +205,85 @@ def get_sector_flow():
 
     results.sort(key=lambda x: x["call_pct"], reverse=True)
     return results
+
+
+# Index/ETF tickers to exclude from individual stock flow leaderboard
+_FLOW_EXCLUDE = {
+    "SPX","SPXW","NDX","RUT","VIX","VIXW","SPY","QQQ","IWM",
+    "DIA","GLD","SLV","TLT","HYG","EEM","EFA","XLK","XLF",
+    "XLV","XLE","XLI","XLB","XLP","XLY","XLC","XLRE","XLU",
+}
+
+
+def get_top_flow(limit=15):
+    """
+    Top individual stocks by unusual options flow from UW screener.
+    Scores by: relative call volume × bullish premium %.
+    Returns list sorted by flow score descending.
+    """
+    data = uw_screener({"order": "call_volume", "order_direction": "desc", "limit": 50})
+    if not data:
+        return []
+
+    results = []
+    for item in data.get("data", []):
+        ticker = str(item.get("ticker", "")).upper()
+        if not ticker or ticker in _FLOW_EXCLUDE:
+            continue
+        # Skip obvious index names (numeric-heavy)
+        if any(c.isdigit() for c in ticker):
+            continue
+
+        bull_prem  = _sf(item.get("bullish_premium", 0))
+        bear_prem  = _sf(item.get("bearish_premium", 0))
+        total_prem = bull_prem + bear_prem
+        bull_pct   = round(bull_prem / total_prem * 100, 1) if total_prem else 50.0
+
+        call_vol   = _sf(item.get("call_volume", 0))
+        put_vol    = _sf(item.get("put_volume", 0))
+        avg30_call = _sf(item.get("avg_30_day_call_volume",
+                          item.get("avg30_call_volume", 1)))
+        call_vs30  = round(call_vol / avg30_call, 2) if avg30_call else 1.0
+
+        # Aggressive call buying (at the ask)
+        call_ask   = _sf(item.get("call_volume_ask_side", 0))
+        ask_pct    = round(call_ask / call_vol * 100, 1) if call_vol else 0.0
+
+        pcr        = round(put_vol / call_vol, 2) if call_vol else 99.0
+        iv_rank    = round(_sf(item.get("iv_rank", 0)), 1)
+        sector     = item.get("sector", "") or ""
+
+        # Flow score: unusual call activity weighted by bullish premium direction
+        flow_score = round(call_vs30 * (bull_pct / 50), 2)
+
+        if bull_pct >= 57 and pcr <= 0.45:
+            sentiment = "STRONG BULL"
+        elif bull_pct >= 52:
+            sentiment = "BULLISH"
+        elif bull_pct <= 43 and pcr >= 1.5:
+            sentiment = "STRONG BEAR"
+        elif bull_pct <= 48:
+            sentiment = "BEARISH"
+        else:
+            sentiment = "NEUTRAL"
+
+        results.append({
+            "ticker":     ticker,
+            "sector":     sector,
+            "bull_pct":   bull_pct,
+            "pcr":        pcr,
+            "call_vs30":  call_vs30,
+            "ask_pct":    ask_pct,
+            "iv_rank":    iv_rank,
+            "bull_prem":  round(bull_prem),
+            "bear_prem":  round(bear_prem),
+            "call_vol":   int(call_vol),
+            "flow_score": flow_score,
+            "sentiment":  sentiment,
+        })
+
+    results.sort(key=lambda x: x["flow_score"], reverse=True)
+    return results[:limit]
 
 
 def uw_seasonality(ticker):
