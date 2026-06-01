@@ -261,8 +261,8 @@ function pollProgress() {
       document.getElementById('scanProgress').style.display = 'none';
       document.getElementById('scanBtn').disabled = false;
       document.getElementById('scanBtn').textContent = '🔄 Scan Now';
-      if (p.status === 'done') { loadResults(); toast('Scan complete!'); }
-      else { toast('Scan error — check logs'); }
+      if (p.status === 'done') { loadResults(); toast('Scan complete — ' + p.done + ' results'); }
+      else { toast('Scan failed: ' + (p.phase || p.error || 'unknown error')); }
     }
   }, 3000);
 }
