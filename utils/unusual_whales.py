@@ -14,7 +14,10 @@ CACHE_TTL = 300  # 5 min
 def _headers():
     # Re-read at call time so hot env reloads work
     key = os.environ.get("UW_API_KEY", UW_KEY)
-    return {"Authorization": f"Bearer {key}"}
+    return {
+        "Authorization":    f"Bearer {key}",
+        "UW-CLIENT-API-ID": "100001",
+    }
 
 
 def _get(endpoint, params=None, ttl=CACHE_TTL):
