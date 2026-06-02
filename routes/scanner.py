@@ -160,8 +160,8 @@ def _batch_quick_scan(universe):
                 continue
 
             price = round(float(closes[-1]), 2)
-            if price <= 0 or price > 100_000:
-                continue   # bogus price — skip silently
+            if price <= 0:
+                continue   # no valid price data for this ticker
             vol_today = float(volumes[-1]) if volumes else 0
 
             ema20 = _ema(closes, 20) if len(closes) >= 20 else None

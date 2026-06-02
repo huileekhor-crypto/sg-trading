@@ -86,9 +86,15 @@ def init_journal_db():
     ''')
     # Migrate: add scanner columns if they don't exist yet
     for stmt in [
-        "ALTER TABLE settings ADD COLUMN scan_rvol_min   REAL DEFAULT 1.5",
-        "ALTER TABLE settings ADD COLUMN universe_mode   TEXT DEFAULT 'full'",
-        "ALTER TABLE settings ADD COLUMN custom_watchlist TEXT DEFAULT ''",
+        "ALTER TABLE settings ADD COLUMN scan_rvol_min      REAL DEFAULT 1.5",
+        "ALTER TABLE settings ADD COLUMN universe_mode      TEXT DEFAULT 'full'",
+        "ALTER TABLE settings ADD COLUMN custom_watchlist   TEXT DEFAULT ''",
+        # Extension / anti-chase thresholds (Fix 3)
+        "ALTER TABLE settings ADD COLUMN ext_rsi_ceil       REAL DEFAULT 80",
+        "ALTER TABLE settings ADD COLUMN ext_gain_pct       REAL DEFAULT 8.0",
+        "ALTER TABLE settings ADD COLUMN ext_iv_ceil        REAL DEFAULT 90",
+        # Price consistency check (Fix 4)
+        "ALTER TABLE settings ADD COLUMN price_mismatch_pct REAL DEFAULT 5.0",
     ]:
         try:
             conn.execute(stmt)
@@ -108,6 +114,8 @@ def get_settings():
         "account_size": 20000, "weekly_target": 1500,
         "swing_risk": 2.0, "lt_position": 7.5, "email": "",
         "scan_rvol_min": 1.5, "universe_mode": "full", "custom_watchlist": "",
+        "ext_rsi_ceil": 80, "ext_gain_pct": 8.0,
+        "ext_iv_ceil": 90, "price_mismatch_pct": 5.0,
     }
 
 
@@ -120,10 +128,14 @@ def update_settings(data):
             swing_risk       = ?,
             lt_position      = ?,
             email            = ?,
-            scan_rvol_min    = ?,
-            universe_mode    = ?,
-            custom_watchlist = ?,
-            updated_at       = ?
+            scan_rvol_min      = ?,
+            universe_mode      = ?,
+            custom_watchlist   = ?,
+            ext_rsi_ceil       = ?,
+            ext_gain_pct       = ?,
+            ext_iv_ceil        = ?,
+            price_mismatch_pct = ?,
+            updated_at         = ?
         WHERE id = 1
     ''', (
         data.get("account_size", 20000),
@@ -134,6 +146,10 @@ def update_settings(data):
         data.get("scan_rvol_min", 1.5),
         data.get("universe_mode", "full"),
         data.get("custom_watchlist", ""),
+        data.get("ext_rsi_ceil", 80),
+        data.get("ext_gain_pct", 8.0),
+        data.get("ext_iv_ceil", 90),
+        data.get("price_mismatch_pct", 5.0),
         datetime.now().isoformat()
     ))
     conn.commit()

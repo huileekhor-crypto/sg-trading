@@ -178,7 +178,7 @@ def _sig_catalyst(ticker):
     return result
 
 
-def _score_ticker(ticker, is_bull=True, rvol_min=1.5):
+def _score_ticker(ticker, is_bull=True, rvol_min=1.5, ext_rsi_ceil=80, ext_gain_pct=8.0):
     candles = _get_candles(ticker)
     if not candles or len(candles['c']) < 22:
         return None
@@ -392,8 +392,30 @@ def _score_ticker(ticker, is_bull=True, rvol_min=1.5):
         dc = None
         pattern_score = 0
 
+    # ── Extension penalty (FIX 3 — anti-chase guards) ────────────────────
+    # Penalise names that are already stretched. The methodology is "buy the
+    # base, not the breakout at RSI 92." Extended names stay visible (so you
+    # can watch for a reset) but score lower and carry explicit tags.
+    extension_tags = []
+    extension_penalty = 0
+
+    # RSI ceiling: each point above the ceiling costs 1.5 raw pts (capped 25)
+    if rsi is not None and rsi > ext_rsi_ceil:
+        pts = min(25, round((rsi - ext_rsi_ceil) * 1.5))
+        extension_tags.append(
+            f'RSI {rsi} EXTENDED (>{ext_rsi_ceil}) — wait for reset before entry'
+        )
+        extension_penalty += pts
+
+    # Single-day gain: large moves are chasing territory
+    if pct_chg > ext_gain_pct:
+        extension_tags.append(
+            f'+{pct_chg}% today EXTENDED (>{ext_gain_pct}%) — wait for pullback'
+        )
+        extension_penalty += 10
+
     # ── Normalise + Regime Multiplier ─────────────────────────────────────
-    raw_total = sum(sg['score'] for sg in sigs)
+    raw_total = max(0, sum(sg['score'] for sg in sigs) - extension_penalty)
     max_raw = MAX_RAW + (10 if trump_holds else 0) + (20 if trump_mention else 0)
     regime_m = 1.0 if is_bull else 0.65
     tech_norm = min(100, round((raw_total / max_raw) * 100 * regime_m))
@@ -404,12 +426,29 @@ def _score_ticker(ticker, is_bull=True, rvol_min=1.5):
     if normalized < 50:
         return None
 
-    if normalized >= 80:
-        level, color, emoji, label = 'IMMINENT', 'red', '🚨', 'IMMINENT BREAKOUT'
-    elif normalized >= 65:
-        level, color, emoji, label = 'WATCH', 'amber', '⚠', 'HIGH PROBABILITY'
+    # ── Volume-aware labeling (FIX 2) ─────────────────────────────────────
+    # A breakout requires expanding volume. Below-threshold RVOL = coiling /
+    # base-building — valid watchlist candidate, but must NOT carry a
+    # "breakout" label. Only upgrade to IMMINENT/HIGH_PROBABILITY when volume
+    # actually confirms.
+    rvol_sig = next((sg for sg in sigs if sg['name'] == 'RVOL'), None)
+    vol_contraction_sig = next((sg for sg in sigs if sg['name'] == 'Volume Contraction'), None)
+    volume_confirmed = bool(rvol_sig and rvol_sig['score'] > 0)
+    is_coiling = bool(vol_contraction_sig and vol_contraction_sig['score'] >= 8)
+
+    if volume_confirmed:
+        if normalized >= 80:
+            level, color, emoji, label = 'IMMINENT', 'red', '🚨', 'IMMINENT BREAKOUT'
+        elif normalized >= 65:
+            level, color, emoji, label = 'WATCH', 'amber', '⚠', 'HIGH PROBABILITY'
+        else:
+            level, color, emoji, label = 'RADAR', 'cyan', '👁', 'DEVELOPING SETUP'
     else:
-        level, color, emoji, label = 'RADAR', 'cyan', '👁', 'DEVELOPING SETUP'
+        # Volume not confirmed — show as base/coiling regardless of score
+        if is_coiling:
+            level, color, emoji, label = 'COILING', 'cyan', '🔄', 'COILING / BASE'
+        else:
+            level, color, emoji, label = 'COILING', 'gray', '⏳', 'LOW VOLUME — WAIT'
 
     # ATR-based levels
     trs = [max(highs[i] - lows[i], abs(highs[i] - closes[i - 1]), abs(lows[i] - closes[i - 1]))
@@ -457,22 +496,26 @@ def _score_ticker(ticker, is_bull=True, rvol_min=1.5):
         },
         'entry': f'${entry}', 'stop': f'${stop}', 'target': f'${target}',
         'rr': rr, 'rsi': rsi, 'why': why,
+        'volume_confirmed': volume_confirmed,
+        'extension_tags': extension_tags,
+        'extension_penalty': extension_penalty,
+        'rvol': round(rvol, 2),
     }
 
 
-def _scan_list(tickers, is_bull=True, rvol_min=1.5):
+def _scan_list(tickers, is_bull=True, rvol_min=1.5, ext_rsi_ceil=80, ext_gain_pct=8.0):
     now = datetime.now()
     results = []
     for ticker in tickers:
-        # Cache key includes rvol_min so a threshold change invalidates old results
-        cache_key = f"{ticker}:{rvol_min}"
+        # Cache key covers all scoring params — threshold changes invalidate results
+        cache_key = f"{ticker}:{rvol_min}:{ext_rsi_ceil}:{ext_gain_pct}"
         cached = _breakout_cache.get(cache_key)
         if cached and (now - cached['ts']).total_seconds() < CACHE_TTL:
             if cached['data']:
                 results.append(cached['data'])
             continue
         try:
-            r = _score_ticker(ticker, is_bull, rvol_min)
+            r = _score_ticker(ticker, is_bull, rvol_min, ext_rsi_ceil, ext_gain_pct)
             _breakout_cache[cache_key] = {'data': r, 'ts': now}
             if r:
                 results.append(r)
@@ -503,9 +546,12 @@ def scan_breakouts():
         return jsonify({'error': 'No tickers provided'}), 400
     tickers = tickers[:30]
     from models.journal import get_settings
-    rvol_min = get_settings().get("scan_rvol_min", 1.5)
+    s = get_settings()
+    rvol_min     = s.get("scan_rvol_min", 1.5)
+    ext_rsi_ceil = s.get("ext_rsi_ceil", 80)
+    ext_gain_pct = s.get("ext_gain_pct", 8.0)
     is_bull, spy_price, spy_ema200, regime_ok = _get_market_regime()
-    results = _scan_list(tickers, is_bull, rvol_min)
+    results = _scan_list(tickers, is_bull, rvol_min, ext_rsi_ceil, ext_gain_pct)
     return jsonify({
         'results': results,
         'scanned': len(tickers),
@@ -521,9 +567,12 @@ def scan_breakouts():
 @breakout_bp.route('/breakout/top', methods=['GET'])
 def top_breakouts():
     from models.journal import get_settings
-    rvol_min = get_settings().get("scan_rvol_min", 1.5)
+    s = get_settings()
+    rvol_min     = s.get("scan_rvol_min", 1.5)
+    ext_rsi_ceil = s.get("ext_rsi_ceil", 80)
+    ext_gain_pct = s.get("ext_gain_pct", 8.0)
     is_bull, spy_price, spy_ema200, regime_ok = _get_market_regime()
-    results = _scan_list(TOP_MOMENTUM_STOCKS, is_bull, rvol_min)
+    results = _scan_list(TOP_MOMENTUM_STOCKS, is_bull, rvol_min, ext_rsi_ceil, ext_gain_pct)
     return jsonify({
         'results': results[:5],
         'scanned': len(TOP_MOMENTUM_STOCKS),
@@ -575,12 +624,17 @@ def uw_scan():
     tickers = list(uw_by_ticker.keys())[:25]
 
     from models.journal import get_settings
-    rvol_min = get_settings().get("scan_rvol_min", 1.5)
+    s = get_settings()
+    rvol_min          = s.get("scan_rvol_min", 1.5)
+    ext_rsi_ceil      = s.get("ext_rsi_ceil", 80)
+    ext_gain_pct      = s.get("ext_gain_pct", 8.0)
+    ext_iv_ceil       = s.get("ext_iv_ceil", 90)
+    price_mismatch_pct = s.get("price_mismatch_pct", 5.0)
     is_bull, spy_price, spy_ema200, regime_ok = _get_market_regime()
 
     def _score(t):
         try:
-            return _score_ticker(t, is_bull, rvol_min)
+            return _score_ticker(t, is_bull, rvol_min, ext_rsi_ceil, ext_gain_pct)
         except Exception:
             return None
 
@@ -592,12 +646,32 @@ def uw_scan():
         if not r:
             continue
         uw = uw_by_ticker.get(r['ticker'], {})
-        r['uw_bullish_pct'] = uw.get('bullish_pct', 0)
+        r['uw_bullish_pct']     = uw.get('bullish_pct', 0)
         r['uw_net_call_premium'] = uw.get('net_call_premium', 0)
-        r['uw_call_vs30'] = uw.get('call_vs30', 0)
-        r['uw_iv_rank'] = uw.get('iv_rank', 0)
-        r['uw_sector'] = uw.get('sector', '')
-        r['uw_perc_change'] = uw.get('perc_change', 0)
+        r['uw_call_vs30']       = uw.get('call_vs30', 0)
+        r['uw_iv_rank']         = uw.get('iv_rank', 0)
+        r['uw_sector']          = uw.get('sector', '')
+        r['uw_perc_change']     = uw.get('perc_change', 0)
+
+        # FIX 3 — IV rank tag (informational, no score penalty — options cost more)
+        if r['uw_iv_rank'] > ext_iv_ceil:
+            r.setdefault('extension_tags', []).append(
+                f'IV Rank {r["uw_iv_rank"]} EXPENSIVE PREMIUM (>{ext_iv_ceil}) — options cost elevated'
+            )
+
+        # FIX 4 — Price consistency: two independent % change sources
+        # yfinance daily % change vs UW daily % change — flag meaningful disagreement.
+        # High-but-consistent prices are valid and must not be rejected.
+        yf_chg = r.get('price_change', 0)
+        uw_chg = r['uw_perc_change']
+        r['price_mismatch'] = False
+        if uw_chg != 0 and abs(yf_chg - uw_chg) > price_mismatch_pct:
+            msg = (f'Price data mismatch: yfinance {yf_chg:+.1f}% vs '
+                   f'UW {uw_chg:+.1f}% — verify before trading')
+            r['price_mismatch'] = True
+            r.setdefault('extension_tags', []).append(msg)
+            print(f'[PRICE_CHECK] {r["ticker"]}: {msg}')
+
         results.append(r)
 
     results.sort(key=lambda x: x['score'], reverse=True)
