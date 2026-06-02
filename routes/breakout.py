@@ -62,16 +62,23 @@ SECTOR_MAP = {
 MAX_RAW = 165  # base: 15+15+10+10+25+20+20+20+15+15 (+10 portfolio +20 mention on top)
 
 
-def _get_candles(ticker, days=260):
+def _get_candles(ticker, days=260, period=None):
+    """Fetch OHLCV candles. Use period='1y'/'6mo' etc for robust fixed-window
+    fetches; use days=N for short rolling windows (sector EMAs, etc.)."""
     now = datetime.now()
-    cache_key = f"{ticker}:{days}"   # include days so short/long fetches don't collide
+    cache_key = f"{ticker}:{period or days}"
     cached = _candle_cache.get(cache_key)
     if cached and (now - cached['ts']).total_seconds() < CANDLE_TTL:
         return cached['data']
-    end = now
-    start = end - timedelta(days=days)
-    df = yf.download(ticker, start=start.strftime('%Y-%m-%d'),
-                     end=end.strftime('%Y-%m-%d'), progress=False, auto_adjust=True)
+
+    if period:
+        df = yf.download(ticker, period=period, progress=False, auto_adjust=True)
+    else:
+        end = now
+        start = end - timedelta(days=days)
+        df = yf.download(ticker, start=start.strftime('%Y-%m-%d'),
+                         end=end.strftime('%Y-%m-%d'), progress=False, auto_adjust=True)
+
     if df.empty:
         _candle_cache[cache_key] = {'data': None, 'ts': now}
         return None
@@ -111,8 +118,9 @@ def _rsi(prices, period=14):
 
 
 def _get_market_regime():
-    # 290 calendar days → ~205 trading days, safely above the 200-candle minimum
-    candles = _get_candles('SPY', days=290)
+    # period='1y' always returns ~252 trading days regardless of holidays —
+    # avoids the calendar-math fragility of days=N (290 days → only 198 rows)
+    candles = _get_candles('SPY', period='1y')
     if not candles or len(candles['c']) < 200:
         print("[REGIME] SPY candle fetch failed or insufficient data — regime UNKNOWN")
         return True, 0, 0, False   # is_bull, spy_price, spy_ema200, regime_ok
