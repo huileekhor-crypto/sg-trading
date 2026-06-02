@@ -64,7 +64,8 @@ MAX_RAW = 165  # base: 15+15+10+10+25+20+20+20+15+15 (+10 portfolio +20 mention 
 
 def _get_candles(ticker, days=260):
     now = datetime.now()
-    cached = _candle_cache.get(ticker)
+    cache_key = f"{ticker}:{days}"   # include days so short/long fetches don't collide
+    cached = _candle_cache.get(cache_key)
     if cached and (now - cached['ts']).total_seconds() < CANDLE_TTL:
         return cached['data']
     end = now
@@ -72,18 +73,18 @@ def _get_candles(ticker, days=260):
     df = yf.download(ticker, start=start.strftime('%Y-%m-%d'),
                      end=end.strftime('%Y-%m-%d'), progress=False, auto_adjust=True)
     if df.empty:
-        _candle_cache[ticker] = {'data': None, 'ts': now}
+        _candle_cache[cache_key] = {'data': None, 'ts': now}
         return None
     if hasattr(df.columns, 'levels'):
         df.columns = df.columns.droplevel(1)
     data = {
-        'c': df['Close'].tolist(),
-        'h': df['High'].tolist(),
-        'l': df['Low'].tolist(),
-        'o': df['Open'].tolist(),
-        'v': df['Volume'].tolist(),
+        'c': df['Close'].dropna().tolist(),
+        'h': df['High'].dropna().tolist(),
+        'l': df['Low'].dropna().tolist(),
+        'o': df['Open'].dropna().tolist(),
+        'v': df['Volume'].dropna().tolist(),
     }
-    _candle_cache[ticker] = {'data': data, 'ts': now}
+    _candle_cache[cache_key] = {'data': data, 'ts': now}
     return data
 
 
