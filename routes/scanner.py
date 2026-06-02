@@ -2,11 +2,11 @@
 
 import time
 import threading
-from flask import Blueprint, jsonify, request, render_template
+from flask import Blueprint, jsonify, render_template
 from models.journal import get_latest_scan, save_scan_results, get_settings
 from utils.tickers import get_scan_universe
 from utils.analysis_engine import (
-    quick_score, run_full_analysis,
+    run_full_analysis,
     _ema, _rsi, layer1_trend, layer2_momentum, layer4_structure,
 )
 from utils.position_calc import calc_swing_setup, calc_lt_setup
@@ -24,14 +24,14 @@ def scan_page():
 
 @scanner_bp.route("/api/scan/results")
 def scan_results():
-    rows  = get_latest_scan()
+    rows = get_latest_scan()
     swing = [r for r in rows if r.get("mode_tag") == "SWING"]
-    lt    = [r for r in rows if r.get("mode_tag") == "LONG-TERM"]
+    lt = [r for r in rows if r.get("mode_tag") == "LONG-TERM"]
     return jsonify({
-        "swing":     swing,
+        "swing": swing,
         "long_term": lt,
         "scan_date": rows[0]["scan_date"] if rows else None,
-        "count":     len(rows),
+        "count": len(rows),
     })
 
 
@@ -65,7 +65,7 @@ def market_regime():
     from utils.unusual_whales import get_market_regime
     try:
         regime = get_market_regime()
-    except Exception as e:
+    except Exception:
         regime = {"regime": "NEUTRAL", "summary": "Unavailable", "advice": "Trade normal sizing",
                   "available": False, "color": "yellow"}
     return jsonify(regime)
@@ -73,7 +73,6 @@ def market_regime():
 
 @scanner_bp.route("/api/scan/run", methods=["POST"])
 def trigger_scan():
-    global _scan_running
     if _scan_running:
         return jsonify({"error": "Scan already running"}), 409
     thread = threading.Thread(target=run_scan_job, daemon=True)
@@ -139,10 +138,10 @@ def _batch_quick_scan(universe):
             for ticker in batch:
                 try:
                     if multi:
-                        closes  = raw["Close"][ticker].dropna().tolist()
+                        closes = raw["Close"][ticker].dropna().tolist()
                         volumes = raw["Volume"][ticker].dropna().tolist()
                     else:
-                        closes  = raw["Close"].dropna().tolist()
+                        closes = raw["Close"].dropna().tolist()
                         volumes = raw["Volume"].dropna().tolist()
                     if len(closes) >= 20:
                         all_data[ticker] = {"closes": closes, "volumes": volumes}
@@ -154,39 +153,41 @@ def _batch_quick_scan(universe):
     results = []
     for ticker in universe:
         try:
-            d       = all_data.get(ticker, {})
-            closes  = d.get("closes", [])
+            d = all_data.get(ticker, {})
+            closes = d.get("closes", [])
             volumes = d.get("volumes", [])
             if len(closes) < 20:
                 continue
 
             price = round(float(closes[-1]), 2)
+            if price <= 0 or price > 100_000:
+                continue   # bogus price — skip silently
             vol_today = float(volumes[-1]) if volumes else 0
 
-            ema20  = _ema(closes, 20)  if len(closes) >= 20  else None
-            ema50  = _ema(closes, 50)  if len(closes) >= 50  else None
+            ema20 = _ema(closes, 20) if len(closes) >= 20 else None
+            ema50 = _ema(closes, 50) if len(closes) >= 50 else None
             ema200 = _ema(closes, 200) if len(closes) >= 200 else None
-            rsi    = _rsi(closes, 14)  if len(closes) >= 15  else None
+            rsi = _rsi(closes, 14) if len(closes) >= 15 else None
 
             l1 = layer1_trend(price, ema20, ema50, ema200)
             l2 = layer2_momentum(rsi)
             l4 = layer4_structure(price, ema20)
 
-            avg20    = sum(volumes[-21:-1]) / 20 if len(volumes) >= 21 else 0
-            ratio    = vol_today / avg20 if avg20 > 0 else 0
+            avg20 = sum(volumes[-21:-1]) / 20 if len(volumes) >= 21 else 0
+            ratio = vol_today / avg20 if avg20 > 0 else 0
             l3_score = 20 if ratio >= 2 else 15 if ratio >= 1.5 else 10 if ratio >= 1 else 5
 
             partial = l1["score"] + l2["score"] + l3_score + l4["score"]
-            score4  = round(partial / 90 * 100)
+            score4 = round(partial / 90 * 100)
 
             results.append({
                 "ticker": ticker,
-                "price":  price,
+                "price": price,
                 "score4": score4,
-                "rsi":    round(rsi, 1) if rsi else None,
-                "ema20":  ema20,
+                "rsi": round(rsi, 1) if rsi else None,
+                "ema20": ema20,
                 "l1": l1["score"], "l2": l2["score"],
-                "l3": l3_score,    "l4": l4["score"],
+                "l3": l3_score, "l4": l4["score"],
             })
         except Exception:
             pass
@@ -202,16 +203,25 @@ def run_scan_job():
 
     try:
         settings = get_settings()
-        account  = settings.get("account_size", 20000)
-        risk     = settings.get("swing_risk", 2.0)
-        lt_pos   = settings.get("lt_position", 7.5)
+        account = settings.get("account_size", 20000)
+        risk = settings.get("swing_risk", 2.0)
+        lt_pos = settings.get("lt_position", 7.5)
 
         _scan_progress["phase"] = "Fetching UW screener"
-        uw_extra     = _get_uw_screener_tickers()
+        uw_extra = _get_uw_screener_tickers()
         uw_extra_set = set(uw_extra)
+
+        from utils.tickers import _get_live_universe, _FALLBACK
+        live = _get_live_universe()
+        if live:
+            _scan_progress["universe_source"] = f"UW live holdings ({len(live)} tickers)"
+        else:
+            _scan_progress["universe_source"] = f"static fallback ({len(_FALLBACK)} tickers)"
+            print("[SCANNER] WARNING: using static fallback ticker list — UW ETF holdings unavailable")
 
         universe = get_scan_universe(extra_watchlist=uw_extra)
         _scan_progress["total"] = len(universe)
+        print(f"[SCANNER] Universe: {_scan_progress['universe_source']} + {len(uw_extra)} UW extras = {len(universe)} total")
 
         # ── Phase 1: batch download + quick 4-layer score ─────────────────────
         _scan_progress["phase"] = f"Batch downloading {len(universe)} tickers (yfinance)..."
@@ -231,26 +241,26 @@ def run_scan_job():
 
         # ── Phase 2: full 6-layer deep scan ───────────────────────────────────
         _scan_progress["phase"] = f"Deep scan on {len(candidates)} candidates"
-        _scan_progress["done"]  = 0
+        _scan_progress["done"] = 0
         _scan_progress["total"] = len(candidates)
 
         final_results = []
         for i, cand in enumerate(candidates):
             ticker = cand["ticker"]
             try:
-                full   = run_full_analysis(ticker, "SWING")
-                score  = full["score"]
-                price  = full["price"]
+                full = run_full_analysis(ticker, "SWING")
+                score = full["score"]
+                price = full["price"]
                 layers = full["layers"]
-                fund   = full.get("fundamentals", {})
+                fund = full.get("fundamentals", {})
 
                 trend_score = layers["trend"]["score"]
-                rev_growth  = fund.get("revenue_growth") or 0
-                is_lt    = (trend_score >= 18 and rev_growth >= 0.15 and score >= 65)
+                rev_growth = fund.get("revenue_growth") or 0
+                is_lt = (trend_score >= 18 and rev_growth >= 0.15 and score >= 65)
                 mode_tag = "LONG-TERM" if is_lt else "SWING"
 
-                atr           = full["technicals"].get("atr")
-                planned       = full.get("planned_entry", {})
+                atr = full["technicals"].get("atr")
+                planned = full.get("planned_entry", {})
                 planned_entry = planned.get("entry", price)
 
                 if mode_tag == "SWING":
@@ -258,8 +268,8 @@ def run_scan_job():
                 else:
                     ps = calc_lt_setup(planned_entry, atr, account, lt_pos)
 
-                uw       = layers["smart_money"]
-                analyst  = None
+                uw = layers["smart_money"]
+                analyst = None
                 try:
                     analyst = _get_analyst_rating(ticker)
                 except Exception:
@@ -269,28 +279,28 @@ def run_scan_job():
                 priority = "HIGH" if (from_uw and score >= 70) else "NORMAL"
 
                 final_results.append({
-                    "ticker":      ticker,
-                    "score":       score,
-                    "verdict":     full["verdict"],
-                    "mode_tag":    mode_tag,
-                    "price":       price,
-                    "rsi":         full["technicals"].get("rsi"),
-                    "ema20":       full["technicals"].get("ema20"),
-                    "stop":        ps.get("stop"),
-                    "target":      ps.get("target"),
-                    "shares":      ps.get("shares", 0),
-                    "uw_notes":    uw.get("notes", []),
-                    "uw_score":    uw.get("score", 0),
-                    "analyst":     analyst,
+                    "ticker": ticker,
+                    "score": score,
+                    "verdict": full["verdict"],
+                    "mode_tag": mode_tag,
+                    "price": price,
+                    "rsi": full["technicals"].get("rsi"),
+                    "ema20": full["technicals"].get("ema20"),
+                    "stop": ps.get("stop"),
+                    "target": ps.get("target"),
+                    "shares": ps.get("shares", 0),
+                    "uw_notes": uw.get("notes", []),
+                    "uw_score": uw.get("score", 0),
+                    "analyst": analyst,
                     "uw_screener": from_uw,
-                    "priority":    priority,
+                    "priority": priority,
                     "layers": {
-                        "trend":     layers["trend"]["score"],
-                        "momentum":  layers["momentum"]["score"],
-                        "volume":    layers["volume"]["score"],
+                        "trend": layers["trend"]["score"],
+                        "momentum": layers["momentum"]["score"],
+                        "volume": layers["volume"]["score"],
                         "structure": layers["structure"]["score"],
-                        "catalyst":  layers["catalyst"]["score"],
-                        "sm":        uw.get("score", 0),
+                        "catalyst": layers["catalyst"]["score"],
+                        "sm": uw.get("score", 0),
                     },
                 })
             except Exception as e:
@@ -304,15 +314,15 @@ def run_scan_job():
 
         _scan_progress = {
             "status": "done",
-            "done":   len(final_results),
-            "total":  len(final_results),
-            "phase":  "Complete",
+            "done": len(final_results),
+            "total": len(final_results),
+            "phase": "Complete",
         }
 
         try:
             from utils.emailer import send_daily_brief
-            swing_r = [r for r in final_results if r["mode_tag"] == "SWING"  and r["score"] >= 70]
-            lt_r    = [r for r in final_results if r["mode_tag"] == "LONG-TERM" and r["score"] >= 65]
+            swing_r = [r for r in final_results if r["mode_tag"] == "SWING" and r["score"] >= 70]
+            lt_r = [r for r in final_results if r["mode_tag"] == "LONG-TERM" and r["score"] >= 65]
             send_daily_brief(swing_r[:5], lt_r[:3], settings)
         except Exception as e:
             print(f"Email error: {e}")
@@ -320,8 +330,8 @@ def run_scan_job():
     except Exception as e:
         _scan_progress = {
             "status": "error",
-            "error":  str(e),
-            "phase":  f"Failed: {str(e)[:120]}",
+            "error": str(e),
+            "phase": f"Failed: {str(e)[:120]}",
         }
         print(f"Scan job error: {e}")
     finally:

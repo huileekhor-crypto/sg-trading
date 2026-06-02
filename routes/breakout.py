@@ -110,13 +110,15 @@ def _rsi(prices, period=14):
 
 
 def _get_market_regime():
-    candles = _get_candles('SPY', days=260)
+    # 290 calendar days → ~205 trading days, safely above the 200-candle minimum
+    candles = _get_candles('SPY', days=290)
     if not candles or len(candles['c']) < 200:
-        return True, 0, 0
+        print("[REGIME] SPY candle fetch failed or insufficient data — regime UNKNOWN")
+        return True, 0, 0, False   # is_bull, spy_price, spy_ema200, regime_ok
     spy_price = candles['c'][-1]
     spy_ema200 = _ema(candles['c'], 200)
     is_bull = spy_price > spy_ema200 if spy_ema200 else True
-    return is_bull, round(spy_price, 2), round(spy_ema200 or 0, 2)
+    return is_bull, round(spy_price, 2), round(spy_ema200 or 0, 2), True
 
 
 def _sig_sector(ticker):
@@ -489,7 +491,7 @@ def scan_breakouts():
     if not tickers:
         return jsonify({'error': 'No tickers provided'}), 400
     tickers = tickers[:30]
-    is_bull, spy_price, spy_ema200 = _get_market_regime()
+    is_bull, spy_price, spy_ema200, regime_ok = _get_market_regime()
     results = _scan_list(tickers, is_bull)
     return jsonify({
         'results': results,
@@ -498,13 +500,14 @@ def scan_breakouts():
         'market_regime': 'BULL' if is_bull else 'BEAR',
         'spy_price': spy_price,
         'spy_ema200': spy_ema200,
+        'regime_ok': regime_ok,
         'timestamp': datetime.now().isoformat(),
     })
 
 
 @breakout_bp.route('/breakout/top', methods=['GET'])
 def top_breakouts():
-    is_bull, spy_price, spy_ema200 = _get_market_regime()
+    is_bull, spy_price, spy_ema200, regime_ok = _get_market_regime()
     results = _scan_list(TOP_MOMENTUM_STOCKS, is_bull)
     return jsonify({
         'results': results[:5],
@@ -513,6 +516,7 @@ def top_breakouts():
         'market_regime': 'BULL' if is_bull else 'BEAR',
         'spy_price': spy_price,
         'spy_ema200': spy_ema200,
+        'regime_ok': regime_ok,
         'timestamp': datetime.now().isoformat(),
     })
 
@@ -555,7 +559,7 @@ def uw_scan():
     uw_by_ticker = {item['ticker']: item for item in uw_items}
     tickers = list(uw_by_ticker.keys())[:25]
 
-    is_bull, spy_price, spy_ema200 = _get_market_regime()
+    is_bull, spy_price, spy_ema200, regime_ok = _get_market_regime()
 
     def _score(t):
         try:
@@ -590,6 +594,7 @@ def uw_scan():
         'market_regime': 'BULL' if is_bull else 'BEAR',
         'spy_price': spy_price,
         'spy_ema200': spy_ema200,
+        'regime_ok': regime_ok,
         'timestamp': now.isoformat(),
     }
     _uw_scan_cache[cache_key] = {'data': payload, 'ts': now}

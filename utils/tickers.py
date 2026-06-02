@@ -56,8 +56,10 @@ def _get_live_universe():
     qqq = _fetch_etf_holdings("QQQ", limit=150)
 
     if not spy and not qqq:
+        print("[TICKERS] WARNING: UW ETF holdings fetch failed for both SPY and QQQ — falling back to static list")
         return []
 
+    qqq_new = len([t for t in qqq if t not in set(spy)])
     seen = set()
     combined = []
     for t in spy + qqq:
@@ -65,6 +67,7 @@ def _get_live_universe():
             seen.add(t)
             combined.append(t)
 
+    print(f"[TICKERS] Live universe loaded from UW: {len(spy)} SPY + {qqq_new} QQQ-only = {len(combined)} unique tickers")
     _universe_cache["tickers"] = combined
     _universe_cache["ts"] = now
     return combined

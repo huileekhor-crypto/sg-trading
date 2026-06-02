@@ -346,10 +346,17 @@ async function runScan(force=false) {
     // Market regime
     const regime = d.market_regime || 'NEUTRAL';
     const regBadge = document.getElementById('regimeBadge');
-    regBadge.className = 'regime-badge ' + (regime === 'BULL' ? 'regime-bull' : 'regime-bear');
-    regBadge.textContent = (regime === 'BULL' ? '📈 BULL MARKET' : '📉 BEAR MARKET');
-    document.getElementById('regimeSpy').textContent =
-      `SPY $${d.spy_price} · EMA200 $${d.spy_ema200}`;
+    if (!d.regime_ok || !d.spy_price) {
+      regBadge.className = 'regime-badge regime-bear';
+      regBadge.textContent = '⚠ REGIME DATA UNAVAILABLE';
+      document.getElementById('regimeSpy').textContent =
+        'SPY price fetch failed — do not trade until resolved';
+    } else {
+      regBadge.className = 'regime-badge ' + (regime === 'BULL' ? 'regime-bull' : 'regime-bear');
+      regBadge.textContent = (regime === 'BULL' ? '📈 BULL MARKET' : '📉 BEAR MARKET');
+      document.getElementById('regimeSpy').textContent =
+        `SPY $${d.spy_price} · EMA200 $${d.spy_ema200}`;
+    }
     regBar.style.display = '';
 
     // Meta

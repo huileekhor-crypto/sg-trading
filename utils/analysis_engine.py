@@ -1,6 +1,5 @@
 """6-layer analysis engine. All layers return scores, explanations, raw data."""
 
-import math
 from utils.prices import get_candles, get_live_price, get_fundamentals, get_news
 from utils.unusual_whales import smart_money_score
 
@@ -24,10 +23,10 @@ def _swing_lows(candles, lookback=60, window=3):
     subset = candles[-lookback:] if len(candles) > lookback else candles
     lows = []
     for i in range(window, len(subset) - window):
-        l = subset[i]['l']
-        if all(l < subset[j]['l'] for j in range(i - window, i)) and \
-           all(l < subset[j]['l'] for j in range(i + 1, i + window + 1)):
-            lows.append(round(l, 2))
+        low = subset[i]['l']
+        if all(low < subset[j]['l'] for j in range(i - window, i)) and \
+           all(low < subset[j]['l'] for j in range(i + 1, i + window + 1)):
+            lows.append(round(low, 2))
     return lows
 
 
@@ -42,8 +41,8 @@ def calc_planned_entry(price, candles, ema20, ema50, atr):
                 "resistance": None, "support": None, "current_price": price}
 
     recent_highs = _swing_highs(candles, lookback=25, window=3)
-    all_highs    = _swing_highs(candles, lookback=60, window=3)
-    all_lows     = _swing_lows(candles,  lookback=60, window=3)
+    all_highs = _swing_highs(candles, lookback=60, window=3)
+    all_lows = _swing_lows(candles, lookback=60, window=3)
 
     # Nearest resistance above price
     res_above = [h for h in all_highs if h > price * 1.001]
@@ -53,7 +52,7 @@ def calc_planned_entry(price, candles, ema20, ema50, atr):
     recent_pivot = max(recent_highs) if recent_highs else None
 
     # Nearest swing-low support below price
-    sup_below = [l for l in all_lows if l < price * 0.999]
+    sup_below = [v for v in all_lows if v < price * 0.999]
     nearest_support = round(max(sup_below), 2) if sup_below else None
 
     ext20 = (price - ema20) / ema20 * 100 if ema20 else 0
@@ -65,16 +64,16 @@ def calc_planned_entry(price, candles, ema20, ema50, atr):
             breakout_entry = round(recent_pivot * 1.003, 2)
             pct_above = round(dist, 1)
             return {
-                "entry":        breakout_entry,
-                "entry_type":   "BREAKOUT",
+                "entry": breakout_entry,
+                "entry_type": "BREAKOUT",
                 "entry_reason": (
                     f"Price {'clearing' if dist >= 0 else 'testing'} "
                     f"${recent_pivot:.2f} pivot high "
                     f"({'up {:.1f}%'.format(pct_above) if dist >= 0 else '{:.1f}% below'.format(abs(pct_above))}). "
                     f"Enter on confirmed close above — limit ${breakout_entry:.2f}."
                 ),
-                "resistance":   nearest_resistance,
-                "support":      nearest_support or (round(ema20, 2) if ema20 else None),
+                "resistance": nearest_resistance,
+                "support": nearest_support or (round(ema20, 2) if ema20 else None),
                 "current_price": price,
             }
 
@@ -82,14 +81,14 @@ def calc_planned_entry(price, candles, ema20, ema50, atr):
     if ema50 and ext20 > 8:
         entry = round(ema50, 2)
         return {
-            "entry":        entry,
-            "entry_type":   "PULLBACK",
+            "entry": entry,
+            "entry_type": "PULLBACK",
             "entry_reason": (
                 f"Extended {ext20:.1f}% above EMA20 — entering here is FOMO. "
                 f"Wait for pullback to EMA50 at ${entry:.2f}."
             ),
-            "resistance":   nearest_resistance,
-            "support":      entry,
+            "resistance": nearest_resistance,
+            "support": entry,
             "current_price": price,
         }
 
@@ -97,14 +96,14 @@ def calc_planned_entry(price, candles, ema20, ema50, atr):
     if ema20 and 3 < ext20 <= 8:
         entry = round(ema20, 2)
         return {
-            "entry":        entry,
-            "entry_type":   "PULLBACK",
+            "entry": entry,
+            "entry_type": "PULLBACK",
             "entry_reason": (
                 f"Extended {ext20:.1f}% above EMA20 at ${entry:.2f}. "
                 f"Wait for pullback to EMA20 — better risk/reward entry at support."
             ),
-            "resistance":   nearest_resistance,
-            "support":      entry,
+            "resistance": nearest_resistance,
+            "support": entry,
             "current_price": price,
         }
 
@@ -112,24 +111,24 @@ def calc_planned_entry(price, candles, ema20, ema50, atr):
     if ema20 and abs(ext20) <= 3:
         entry = round(ema20, 2) if price >= ema20 else price
         return {
-            "entry":        entry,
-            "entry_type":   "PULLBACK",
+            "entry": entry,
+            "entry_type": "PULLBACK",
             "entry_reason": (
                 f"Consolidating at EMA20 support (${entry:.2f}), "
                 f"{ext20:.1f}% {'above' if ext20 >= 0 else 'below'} — good risk/reward entry zone."
             ),
-            "resistance":   nearest_resistance,
-            "support":      nearest_support or entry,
+            "resistance": nearest_resistance,
+            "support": nearest_support or entry,
             "current_price": price,
         }
 
     # ── DEFAULT: use current price ─────────────────────────────────────────────
     return {
-        "entry":        price,
-        "entry_type":   "MARKET",
+        "entry": price,
+        "entry_type": "MARKET",
         "entry_reason": "No clean chart level identified — entry at current market price.",
-        "resistance":   nearest_resistance,
-        "support":      nearest_support,
+        "resistance": nearest_resistance,
+        "support": nearest_support,
         "current_price": price,
     }
 
@@ -218,9 +217,9 @@ def layer2_momentum(rsi):
     elif 65 < rsi <= 70:
         score, label = 10, "Getting stretched"
     elif 70 < rsi <= 75:
-        score, label = 5,  "Overbought — caution"
+        score, label = 5, "Overbought — caution"
     elif rsi > 75:
-        score, label = 0,  "Severely overbought — FOMO zone"
+        score, label = 0, "Severely overbought — FOMO zone"
     elif 30 <= rsi < 45:
         score, label = 15, "Oversold bounce potential"
     else:
@@ -244,7 +243,7 @@ def layer3_volume(vol_today, candles):
     elif ratio >= 1.0:
         score, label = 10, f"{ratio:.1f}x avg — normal"
     else:
-        score, label = 5,  f"{ratio:.1f}x avg — below average"
+        score, label = 5, f"{ratio:.1f}x avg — below average"
     return {"score": score, "max": 20, "ratio": round(ratio, 2), "avg20": round(avg20),
             "vol_today": round(vol_today), "reason": label}
 
@@ -262,9 +261,9 @@ def layer4_structure(price, ema20):
     elif ext < 10:
         score, label = 10, "Extended — wait for pullback"
     elif ext < 15:
-        score, label = 5,  "Very extended — high risk"
+        score, label = 5, "Very extended — high risk"
     else:
-        score, label = 0,  "FOMO territory — do NOT chase"
+        score, label = 0, "FOMO territory — do NOT chase"
     return {"score": score, "max": 20, "extension_pct": round(ext, 1),
             "ema20": ema20, "reason": label}
 
@@ -277,7 +276,7 @@ def layer5_catalyst(ticker, news_items):
         return {"score": 0, "max": 10, "reason": "No recent news", "headlines": []}
 
     headlines = [n.get("headline", "") for n in news_items[:5]]
-    combined  = " ".join(headlines).lower()
+    combined = " ".join(headlines).lower()
 
     major_keywords = ["earnings", "revenue beat", "record", "contract", "acquisition",
                       "partnership", "fda approval", "breakthrough", "raised guidance"]
@@ -306,14 +305,14 @@ def layer5_catalyst(ticker, news_items):
 def layer6_smart_money(ticker):
     result = smart_money_score(ticker)
     return {
-        "score":     result["score"],
-        "max":       20,
-        "notes":     result["notes"],
-        "signals":   result.get("signals", []),
-        "evidence":  result.get("evidence", {}),
+        "score": result["score"],
+        "max": 20,
+        "notes": result["notes"],
+        "signals": result.get("signals", []),
+        "evidence": result.get("evidence", {}),
         "available": result["available"],
-        "reason":    ", ".join(result["notes"]) if result["notes"] else "No unusual activity",
-        "raw":       result.get("raw", {}),
+        "reason": ", ".join(result["notes"]) if result["notes"] else "No unusual activity",
+        "raw": result.get("raw", {}),
     }
 
 
@@ -323,9 +322,9 @@ def run_full_analysis(ticker, mode="SWING"):
     """Run all 6 layers. Returns complete analysis dict."""
     from utils.unusual_whales import get_earnings_warning, get_seasonality_note
     # Fetch data
-    price_data   = get_live_price(ticker)
-    candles      = get_candles(ticker, days=300)
-    news_items   = get_news(ticker, count=5)
+    price_data = get_live_price(ticker)
+    candles = get_candles(ticker, days=300)
+    news_items = get_news(ticker, count=5)
     fundamentals = get_fundamentals(ticker)
     # Earnings warning + seasonality (non-blocking)
     try:
@@ -338,15 +337,17 @@ def run_full_analysis(ticker, mode="SWING"):
         seasonality_note = None
 
     price = price_data.get("price", 0)
-    vol   = price_data.get("volume", 0)
+    if not price or price <= 0:
+        raise ValueError(f"Could not fetch a valid price for {ticker} (got {price!r})")
+    vol = price_data.get("volume", 0)
 
     closes = [c["c"] for c in candles] if candles else []
 
-    ema20  = _ema(closes, 20)  if len(closes) >= 20  else None
-    ema50  = _ema(closes, 50)  if len(closes) >= 50  else None
+    ema20 = _ema(closes, 20) if len(closes) >= 20 else None
+    ema50 = _ema(closes, 50) if len(closes) >= 50 else None
     ema200 = _ema(closes, 200) if len(closes) >= 200 else None
-    rsi    = _rsi(closes, 14)  if len(closes) >= 15  else None
-    atr    = _atr(candles, 14) if len(candles) >= 15  else None
+    rsi = _rsi(closes, 14) if len(closes) >= 15 else None
+    atr = _atr(candles, 14) if len(candles) >= 15 else None
 
     # Run layers
     l1 = layer1_trend(price, ema20, ema50, ema200)
@@ -360,25 +361,25 @@ def run_full_analysis(ticker, mode="SWING"):
     if mode == "LONG-TERM":
         # Emphasise trend + catalyst + fundamentals
         raw_score = (
-            l1["score"] * 1.2 +  # trend weighted up
-            l2["score"] * 0.8 +  # momentum less critical
-            l3["score"] * 0.9 +
-            l4["score"] * 0.9 +
-            l5["score"] * 1.2 +  # catalyst more important
-            l6["score"] * 1.0
+            l1["score"] * 1.2  # trend weighted up
+            + l2["score"] * 0.8  # momentum less critical
+            + l3["score"] * 0.9
+            + l4["score"] * 0.9
+            + l5["score"] * 1.2  # catalyst more important
+            + l6["score"] * 1.0
         )
-        max_possible = 25*1.2 + 25*0.8 + 20*0.9 + 20*0.9 + 10*1.2 + 20*1.0  # 102
+        max_possible = 25 * 1.2 + 25 * 0.8 + 20 * 0.9 + 20 * 0.9 + 10 * 1.2 + 20 * 1.0  # 102
     else:  # SWING
         # Emphasise momentum + structure + smart money
         raw_score = (
-            l1["score"] * 1.0 +
-            l2["score"] * 1.2 +  # momentum critical for timing
-            l3["score"] * 1.0 +
-            l4["score"] * 1.2 +  # structure (anti-FOMO) critical
-            l5["score"] * 0.8 +
-            l6["score"] * 1.2    # smart money confirmation
+            l1["score"] * 1.0
+            + l2["score"] * 1.2  # momentum critical for timing
+            + l3["score"] * 1.0
+            + l4["score"] * 1.2  # structure (anti-FOMO) critical
+            + l5["score"] * 0.8
+            + l6["score"] * 1.2    # smart money confirmation
         )
-        max_possible = 25*1.0 + 25*1.2 + 20*1.0 + 20*1.2 + 10*0.8 + 20*1.2  # 110
+        max_possible = 25 * 1.0 + 25 * 1.2 + 20 * 1.0 + 20 * 1.2 + 10 * 0.8 + 20 * 1.2  # 110
 
     score = round(min(raw_score / max_possible * 100, 100))
 
@@ -395,48 +396,48 @@ def run_full_analysis(ticker, mode="SWING"):
 
     # Planned entry from chart levels (breakout or pullback)
     planned = calc_planned_entry(price, candles, ema20, ema50, atr)
-    entry   = planned["entry"]
+    entry = planned["entry"]
 
     # ATR-based stops/targets built from planned entry (not live price)
     atr_val = atr or 0
     if atr_val:
-        stop_swing   = round(entry - 1.5 * atr_val, 2)
+        stop_swing = round(entry - 1.5 * atr_val, 2)
         target_swing = round(entry + 3.0 * atr_val, 2)
-        stop_lt      = round(entry - 3.0 * atr_val, 2)
-        target_lt    = round(entry + 8.0 * atr_val, 2)
+        stop_lt = round(entry - 3.0 * atr_val, 2)
+        target_lt = round(entry + 8.0 * atr_val, 2)
     else:
-        stop_swing   = round(entry * 0.94, 2)
+        stop_swing = round(entry * 0.94, 2)
         target_swing = round(entry * 1.20, 2)
-        stop_lt      = round(entry * 0.83, 2)
-        target_lt    = round(entry * 1.75, 2)
+        stop_lt = round(entry * 0.83, 2)
+        target_lt = round(entry * 1.75, 2)
 
     # Discipline checks
     no_earnings_risk = earnings_warning is None
     discipline = {
-        "not_extended":    l4["score"] >= 10,
-        "not_overbought":  l2["score"] >= 10,
-        "has_catalyst":    l5["score"] >= 3,
-        "stop_defined":    True,
-        "smart_money":     l6["score"] >= 5 or not l6["available"],
+        "not_extended": l4["score"] >= 10,
+        "not_overbought": l2["score"] >= 10,
+        "has_catalyst": l5["score"] >= 3,
+        "stop_defined": True,
+        "smart_money": l6["score"] >= 5 or not l6["available"],
         "no_earnings_risk": no_earnings_risk,
     }
 
     return {
-        "ticker":    ticker,
-        "mode":      mode,
-        "score":     score,
-        "verdict":   verdict,
+        "ticker": ticker,
+        "mode": mode,
+        "score": score,
+        "verdict": verdict,
         "verdict_class": verdict_class,
         "price_data": price_data,
-        "price":     price,
+        "price": price,
         "earnings_warning": earnings_warning,
         "seasonality_note": seasonality_note,
         "layers": {
-            "trend":       l1,
-            "momentum":    l2,
-            "volume":      l3,
-            "structure":   l4,
-            "catalyst":    l5,
+            "trend": l1,
+            "momentum": l2,
+            "volume": l3,
+            "structure": l4,
+            "catalyst": l5,
             "smart_money": l6,
         },
         "technicals": {
@@ -445,17 +446,17 @@ def run_full_analysis(ticker, mode="SWING"):
         },
         "planned_entry": planned,
         "trade_setup": {
-            "entry":        entry,
-            "stop_swing":   stop_swing,
+            "entry": entry,
+            "stop_swing": stop_swing,
             "target_swing": target_swing,
-            "stop_lt":      stop_lt,
-            "target_lt":    target_lt,
-            "atr":          atr,
+            "stop_lt": stop_lt,
+            "target_lt": target_lt,
+            "atr": atr,
         },
         "fundamentals": fundamentals,
-        "news":         news_items[:3],
-        "discipline":   discipline,
-        "candles":      candles[-50:] if candles else [],
+        "news": news_items[:3],
+        "discipline": discipline,
+        "candles": candles[-50:] if candles else [],
     }
 
 
@@ -464,14 +465,14 @@ def quick_score(ticker):
     try:
         candles = get_candles(ticker, days=300)
         price_d = get_live_price(ticker)
-        price   = price_d.get("price", 0)
-        vol     = price_d.get("volume", 0)
-        closes  = [c["c"] for c in candles] if candles else []
+        price = price_d.get("price", 0)
+        vol = price_d.get("volume", 0)
+        closes = [c["c"] for c in candles] if candles else []
 
-        ema20  = _ema(closes, 20)  if len(closes) >= 20  else None
-        ema50  = _ema(closes, 50)  if len(closes) >= 50  else None
+        ema20 = _ema(closes, 20) if len(closes) >= 20 else None
+        ema50 = _ema(closes, 50) if len(closes) >= 50 else None
         ema200 = _ema(closes, 200) if len(closes) >= 200 else None
-        rsi    = _rsi(closes, 14)  if len(closes) >= 15  else None
+        rsi = _rsi(closes, 14) if len(closes) >= 15 else None
 
         l1 = layer1_trend(price, ema20, ema50, ema200)
         l2 = layer2_momentum(rsi)
