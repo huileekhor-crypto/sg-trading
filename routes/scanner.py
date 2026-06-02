@@ -207,21 +207,54 @@ def run_scan_job():
         risk = settings.get("swing_risk", 2.0)
         lt_pos = settings.get("lt_position", 7.5)
 
-        _scan_progress["phase"] = "Fetching UW screener"
-        uw_extra = _get_uw_screener_tickers()
-        uw_extra_set = set(uw_extra)
+        # ── Startup self-test ──────────────────────────────────────────────────
+        _scan_progress["phase"] = "Self-test"
+        _scan_progress["warnings"] = []
 
         from utils.tickers import _get_live_universe, _FALLBACK
         live = _get_live_universe()
         if live:
             _scan_progress["universe_source"] = f"UW live holdings ({len(live)} tickers)"
         else:
+            msg = "WARNING: UW ETF holdings unavailable — using static fallback list"
+            _scan_progress["warnings"].append(msg)
             _scan_progress["universe_source"] = f"static fallback ({len(_FALLBACK)} tickers)"
-            print("[SCANNER] WARNING: using static fallback ticker list — UW ETF holdings unavailable")
+            print(f"[SCANNER] {msg}")
 
-        universe = get_scan_universe(extra_watchlist=uw_extra)
+        from utils.prices import get_live_price
+        spy_check = get_live_price("SPY")
+        spy_px = spy_check.get("price", 0)
+        if spy_px <= 0:
+            msg = "CRITICAL: SPY price returned $0 — Yahoo Finance feed may be down"
+            _scan_progress["warnings"].append(msg)
+            print(f"[SCANNER] {msg}")
+        elif spy_px < 100 or spy_px > 10_000:
+            msg = f"WARNING: SPY price ${spy_px} looks implausible — verify data feed"
+            _scan_progress["warnings"].append(msg)
+            print(f"[SCANNER] {msg}")
+        else:
+            print(f"[SCANNER] Self-test: SPY ${spy_px} OK, universe {_scan_progress['universe_source']}")
+
+        # ── Build universe ────────────────────────────────────────────────────
+        _scan_progress["phase"] = "Fetching UW screener"
+        uw_extra = _get_uw_screener_tickers()
+        uw_extra_set = set(uw_extra)
+
+        universe_mode = settings.get("universe_mode", "full")
+        custom_raw = settings.get("custom_watchlist", "")
+        custom_tickers = [t.strip().upper() for t in custom_raw.split(",") if t.strip()] if custom_raw else []
+        if custom_tickers:
+            print(f"[SCANNER] Custom watchlist: {custom_tickers}")
+
+        universe = get_scan_universe(universe_mode=universe_mode, extra_watchlist=uw_extra + custom_tickers)
+
+        if not universe:
+            msg = "CRITICAL: Empty scan universe — check ticker source"
+            _scan_progress["warnings"].append(msg)
+            print(f"[SCANNER] {msg}")
+
         _scan_progress["total"] = len(universe)
-        print(f"[SCANNER] Universe: {_scan_progress['universe_source']} + {len(uw_extra)} UW extras = {len(universe)} total")
+        print(f"[SCANNER] Universe: {_scan_progress['universe_source']} + {len(uw_extra)} UW extras + {len(custom_tickers)} custom = {len(universe)} total")
 
         # ── Phase 1: batch download + quick 4-layer score ─────────────────────
         _scan_progress["phase"] = f"Batch downloading {len(universe)} tickers (yfinance)..."

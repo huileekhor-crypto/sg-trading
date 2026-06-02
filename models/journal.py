@@ -84,6 +84,16 @@ def init_journal_db():
         INSERT OR IGNORE INTO settings (id, account_size, weekly_target, swing_risk, lt_position)
         VALUES (1, 20000, 1500, 2.0, 7.5)
     ''')
+    # Migrate: add scanner columns if they don't exist yet
+    for stmt in [
+        "ALTER TABLE settings ADD COLUMN scan_rvol_min   REAL DEFAULT 1.5",
+        "ALTER TABLE settings ADD COLUMN universe_mode   TEXT DEFAULT 'full'",
+        "ALTER TABLE settings ADD COLUMN custom_watchlist TEXT DEFAULT ''",
+    ]:
+        try:
+            conn.execute(stmt)
+        except Exception:
+            pass  # column already exists
     conn.commit()
     conn.close()
 
@@ -96,7 +106,8 @@ def get_settings():
     conn.close()
     return dict(row) if row else {
         "account_size": 20000, "weekly_target": 1500,
-        "swing_risk": 2.0, "lt_position": 7.5, "email": ""
+        "swing_risk": 2.0, "lt_position": 7.5, "email": "",
+        "scan_rvol_min": 1.5, "universe_mode": "full", "custom_watchlist": "",
     }
 
 
@@ -104,12 +115,15 @@ def update_settings(data):
     conn = get_db()
     conn.execute('''
         UPDATE settings SET
-            account_size  = ?,
-            weekly_target = ?,
-            swing_risk    = ?,
-            lt_position   = ?,
-            email         = ?,
-            updated_at    = ?
+            account_size     = ?,
+            weekly_target    = ?,
+            swing_risk       = ?,
+            lt_position      = ?,
+            email            = ?,
+            scan_rvol_min    = ?,
+            universe_mode    = ?,
+            custom_watchlist = ?,
+            updated_at       = ?
         WHERE id = 1
     ''', (
         data.get("account_size", 20000),
@@ -117,6 +131,9 @@ def update_settings(data):
         data.get("swing_risk", 2.0),
         data.get("lt_position", 7.5),
         data.get("email", ""),
+        data.get("scan_rvol_min", 1.5),
+        data.get("universe_mode", "full"),
+        data.get("custom_watchlist", ""),
         datetime.now().isoformat()
     ))
     conn.commit()
@@ -206,10 +223,10 @@ def close_position(pos_id):
 
 def log_trade(data):
     conn = get_db()
-    entry  = data.get("entry_price", 0) or 0
-    exit_  = data.get("exit_price", 0) or 0
+    entry = data.get("entry_price", 0) or 0
+    exit_ = data.get("exit_price", 0) or 0
     shares = data.get("shares", 0) or 0
-    pnl     = round((exit_ - entry) * shares, 2) if entry and exit_ and shares else (data.get("pnl") or 0)
+    pnl = round((exit_ - entry) * shares, 2) if entry and exit_ and shares else (data.get("pnl") or 0)
     pnl_pct = round((exit_ - entry) / entry * 100, 2) if entry and exit_ else 0
     conn.execute('''
         INSERT INTO trades
@@ -248,25 +265,25 @@ def get_stats():
                 "total_pnl": 0, "avg_win": 0, "avg_loss": 0, "profit_factor": 0,
                 "swing_pnl": 0, "lt_pnl": 0, "swing_count": 0, "lt_count": 0}
 
-    wins   = [t for t in trades if (t.get("pnl") or 0) > 0]
+    wins = [t for t in trades if (t.get("pnl") or 0) > 0]
     losses = [t for t in trades if (t.get("pnl") or 0) <= 0]
-    swing  = [t for t in trades if t.get("mode") == "SWING"]
-    lt     = [t for t in trades if t.get("mode") == "LONG-TERM"]
+    swing = [t for t in trades if t.get("mode") == "SWING"]
+    lt = [t for t in trades if t.get("mode") == "LONG-TERM"]
 
-    gross_win  = sum(t["pnl"] for t in wins)
+    gross_win = sum(t["pnl"] for t in wins)
     gross_loss = abs(sum(t["pnl"] for t in losses))
 
     return {
-        "total":         len(trades),
-        "wins":          len(wins),
-        "losses":        len(losses),
-        "win_rate":      round(len(wins) / len(trades) * 100, 1),
-        "total_pnl":     round(sum(t["pnl"] for t in trades), 2),
-        "avg_win":       round(gross_win / len(wins), 2) if wins else 0,
-        "avg_loss":      round(gross_loss / len(losses), 2) if losses else 0,
+        "total": len(trades),
+        "wins": len(wins),
+        "losses": len(losses),
+        "win_rate": round(len(wins) / len(trades) * 100, 1),
+        "total_pnl": round(sum(t["pnl"] for t in trades), 2),
+        "avg_win": round(gross_win / len(wins), 2) if wins else 0,
+        "avg_loss": round(gross_loss / len(losses), 2) if losses else 0,
         "profit_factor": round(gross_win / gross_loss, 2) if gross_loss else 0,
-        "swing_pnl":     round(sum(t["pnl"] for t in swing), 2),
-        "lt_pnl":        round(sum(t["pnl"] for t in lt), 2),
-        "swing_count":   len(swing),
-        "lt_count":      len(lt),
+        "swing_pnl": round(sum(t["pnl"] for t in swing), 2),
+        "lt_pnl": round(sum(t["pnl"] for t in lt), 2),
+        "swing_count": len(swing),
+        "lt_count": len(lt),
     }

@@ -169,7 +169,7 @@ def _sig_catalyst(ticker):
     return result
 
 
-def _score_ticker(ticker, is_bull=True):
+def _score_ticker(ticker, is_bull=True, rvol_min=1.5):
     candles = _get_candles(ticker)
     if not candles or len(candles['c']) < 22:
         return None
@@ -273,15 +273,15 @@ def _score_ticker(ticker, is_bull=True):
         rvol = volumes[-1] / avg20
         if rvol >= 3.0:
             s = 25
-            ex = f'RVOL {round(rvol, 1)}× — massive surge, strong institutional buying'
+            ex = f'RVOL {round(rvol, 1)}x — massive surge, strong institutional buying'
         elif rvol >= 2.0:
             s = 15
-            ex = f'RVOL {round(rvol, 1)}× — well above average, accumulation signal'
-        elif rvol >= 1.5:
+            ex = f'RVOL {round(rvol, 1)}x — well above average, accumulation signal'
+        elif rvol >= rvol_min:
             s = 8
-            ex = f'RVOL {round(rvol, 1)}× — above average, buying interest noted'
+            ex = f'RVOL {round(rvol, 1)}x — above {rvol_min}x minimum, buying interest noted'
         else:
-            ex = f'RVOL {round(rvol, 1)}× — below threshold, no volume confirmation'
+            ex = f'RVOL {round(rvol, 1)}x — below {rvol_min}x threshold, no volume confirmation'
     else:
         rvol = 1.0
         ex = 'Volume data unavailable'
@@ -451,18 +451,20 @@ def _score_ticker(ticker, is_bull=True):
     }
 
 
-def _scan_list(tickers, is_bull=True):
+def _scan_list(tickers, is_bull=True, rvol_min=1.5):
     now = datetime.now()
     results = []
     for ticker in tickers:
-        cached = _breakout_cache.get(ticker)
+        # Cache key includes rvol_min so a threshold change invalidates old results
+        cache_key = f"{ticker}:{rvol_min}"
+        cached = _breakout_cache.get(cache_key)
         if cached and (now - cached['ts']).total_seconds() < CACHE_TTL:
             if cached['data']:
                 results.append(cached['data'])
             continue
         try:
-            r = _score_ticker(ticker, is_bull)
-            _breakout_cache[ticker] = {'data': r, 'ts': now}
+            r = _score_ticker(ticker, is_bull, rvol_min)
+            _breakout_cache[cache_key] = {'data': r, 'ts': now}
             if r:
                 results.append(r)
         except Exception:
@@ -491,8 +493,10 @@ def scan_breakouts():
     if not tickers:
         return jsonify({'error': 'No tickers provided'}), 400
     tickers = tickers[:30]
+    from models.journal import get_settings
+    rvol_min = get_settings().get("scan_rvol_min", 1.5)
     is_bull, spy_price, spy_ema200, regime_ok = _get_market_regime()
-    results = _scan_list(tickers, is_bull)
+    results = _scan_list(tickers, is_bull, rvol_min)
     return jsonify({
         'results': results,
         'scanned': len(tickers),
@@ -507,8 +511,10 @@ def scan_breakouts():
 
 @breakout_bp.route('/breakout/top', methods=['GET'])
 def top_breakouts():
+    from models.journal import get_settings
+    rvol_min = get_settings().get("scan_rvol_min", 1.5)
     is_bull, spy_price, spy_ema200, regime_ok = _get_market_regime()
-    results = _scan_list(TOP_MOMENTUM_STOCKS, is_bull)
+    results = _scan_list(TOP_MOMENTUM_STOCKS, is_bull, rvol_min)
     return jsonify({
         'results': results[:5],
         'scanned': len(TOP_MOMENTUM_STOCKS),
@@ -559,11 +565,13 @@ def uw_scan():
     uw_by_ticker = {item['ticker']: item for item in uw_items}
     tickers = list(uw_by_ticker.keys())[:25]
 
+    from models.journal import get_settings
+    rvol_min = get_settings().get("scan_rvol_min", 1.5)
     is_bull, spy_price, spy_ema200, regime_ok = _get_market_regime()
 
     def _score(t):
         try:
-            return _score_ticker(t, is_bull)
+            return _score_ticker(t, is_bull, rvol_min)
         except Exception:
             return None
 

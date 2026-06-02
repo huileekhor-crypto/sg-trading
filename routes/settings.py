@@ -21,11 +21,14 @@ def update_s():
     data = request.get_json()
     try:
         update_settings({
-            "account_size":  float(data.get("account_size", 20000)),
-            "weekly_target": float(data.get("weekly_target", 1500)),
-            "swing_risk":    float(data.get("swing_risk", 2.0)),
-            "lt_position":   float(data.get("lt_position", 7.5)),
-            "email":         str(data.get("email", "")),
+            "account_size":     float(data.get("account_size", 20000)),
+            "weekly_target":    float(data.get("weekly_target", 1500)),
+            "swing_risk":       float(data.get("swing_risk", 2.0)),
+            "lt_position":      float(data.get("lt_position", 7.5)),
+            "email":            str(data.get("email", "")),
+            "scan_rvol_min":    float(data.get("scan_rvol_min", 1.5)),
+            "universe_mode":    str(data.get("universe_mode", "full")),
+            "custom_watchlist": str(data.get("custom_watchlist", "")),
         })
         return jsonify({"success": True})
     except Exception as e:

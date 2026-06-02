@@ -166,13 +166,25 @@ WATCHLIST_DEFAULT = [
 ]
 
 
-def get_scan_universe(extra_watchlist=None):
+def get_scan_universe(universe_mode="full", extra_watchlist=None):
     """
-    Primary: SPY + QQQ live holdings from UW (503 + 101 stocks, deduplicated).
-    Fallback: static sector list (~480 tickers) if UW is unavailable.
-    extra_watchlist tickers (e.g. from UW screener) are appended and deduplicated.
+    Primary source: UW ETF holdings (cached 24h). Fallback: static sector list.
+    universe_mode:
+      "full"  — SPY (503) + QQQ (101), ~560 unique  [default]
+      "sp500" — SPY only (~503)
+    extra_watchlist tickers (UW screener + custom watchlist) appended and deduplicated.
     """
-    base = _get_live_universe() or _FALLBACK
+    live = _get_live_universe()
+
+    if live:
+        if universe_mode == "sp500":
+            # SPY-only: re-fetch just SPY holdings (already cached inside _fetch_etf_holdings)
+            spy_only = _fetch_etf_holdings("SPY", limit=600)
+            base = spy_only if spy_only else live
+        else:
+            base = live
+    else:
+        base = _FALLBACK
 
     seen = set()
     universe = []

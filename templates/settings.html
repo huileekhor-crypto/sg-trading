@@ -41,6 +41,28 @@
 </div>
 
 <div class="card" style="margin-bottom:16px">
+  <div class="card-title">Scanner</div>
+  <div class="form-group">
+    <label class="form-label">Minimum RVOL for Breakout Scan</label>
+    <input class="form-input" id="sRvolMin" type="number" step="0.1" min="0.5" max="5.0" placeholder="1.5">
+    <div style="font-size:11px;color:var(--text-muted);margin-top:4px">Tickers below this relative-volume threshold score 0 on the RVOL signal. Default 1.5×.</div>
+  </div>
+  <div class="form-group">
+    <label class="form-label">Universe Mode</label>
+    <select class="form-input" id="sUniverseMode">
+      <option value="full">Full (SPY 503 + QQQ 101, ~560 unique)</option>
+      <option value="sp500">S&amp;P 500 only (SPY, ~503)</option>
+    </select>
+    <div style="font-size:11px;color:var(--text-muted);margin-top:4px">Controls which ETF holdings are fetched from UW as the scan base.</div>
+  </div>
+  <div class="form-group">
+    <label class="form-label">Custom Watchlist (appended to universe)</label>
+    <input class="form-input" id="sCustomWl" type="text" placeholder="RKLB, AVAV, KTOS, ACHR">
+    <div style="font-size:11px;color:var(--text-muted);margin-top:4px">Comma-separated tickers. These are always included regardless of universe mode.</div>
+  </div>
+</div>
+
+<div class="card" style="margin-bottom:16px">
   <div class="card-title">API Keys Status</div>
   <div id="apiStatus" style="font-size:12px;line-height:2">Loading...</div>
 </div>
@@ -64,11 +86,14 @@
 async function loadSettings() {
   const s = await api('/api/settings');
   if (!s) return;
-  document.getElementById('sAccount').value   = s.account_size   || 20000;
-  document.getElementById('sWeekly').value    = s.weekly_target  || 1500;
-  document.getElementById('sSwingRisk').value = s.swing_risk     || 2.0;
-  document.getElementById('sLtPos').value     = s.lt_position    || 7.5;
-  document.getElementById('sEmail').value     = s.email          || '';
+  document.getElementById('sAccount').value      = s.account_size      || 20000;
+  document.getElementById('sWeekly').value       = s.weekly_target     || 1500;
+  document.getElementById('sSwingRisk').value    = s.swing_risk        || 2.0;
+  document.getElementById('sLtPos').value        = s.lt_position       || 7.5;
+  document.getElementById('sEmail').value        = s.email             || '';
+  document.getElementById('sRvolMin').value      = s.scan_rvol_min     || 1.5;
+  document.getElementById('sUniverseMode').value = s.universe_mode     || 'full';
+  document.getElementById('sCustomWl').value     = s.custom_watchlist  || '';
 
   // API key status check
   const r = await fetch('/health');
@@ -89,11 +114,14 @@ async function loadSettings() {
 
 async function saveSettings() {
   const data = {
-    account_size:  parseFloat(document.getElementById('sAccount').value)   || 20000,
-    weekly_target: parseFloat(document.getElementById('sWeekly').value)    || 1500,
-    swing_risk:    parseFloat(document.getElementById('sSwingRisk').value) || 2.0,
-    lt_position:   parseFloat(document.getElementById('sLtPos').value)     || 7.5,
-    email:         document.getElementById('sEmail').value.trim(),
+    account_size:     parseFloat(document.getElementById('sAccount').value)      || 20000,
+    weekly_target:    parseFloat(document.getElementById('sWeekly').value)       || 1500,
+    swing_risk:       parseFloat(document.getElementById('sSwingRisk').value)    || 2.0,
+    lt_position:      parseFloat(document.getElementById('sLtPos').value)        || 7.5,
+    email:            document.getElementById('sEmail').value.trim(),
+    scan_rvol_min:    parseFloat(document.getElementById('sRvolMin').value)      || 1.5,
+    universe_mode:    document.getElementById('sUniverseMode').value             || 'full',
+    custom_watchlist: document.getElementById('sCustomWl').value.trim(),
   };
   const r = await api('/api/settings', {method:'PUT', body:JSON.stringify(data)});
   if (r && r.success) toast('Settings saved ✓');
