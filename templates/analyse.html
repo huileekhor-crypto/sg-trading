@@ -21,7 +21,7 @@
 .verdict-banner.avoid      { background:rgba(239,68,68,.06); border:1px solid rgba(239,68,68,.2); }
 .verdict-banner .ticker { font-family:'DM Mono',monospace; font-size:26px; font-weight:800; }
 .verdict-banner .score  { font-family:'DM Mono',monospace; font-size:14px; font-weight:700; opacity:.7; }
-.layer-row { display:flex; align-items:center; gap:10px; margin-bottom:10px; }
+.layer-row { display:flex; align-items:center; gap:8px; margin-bottom:0; }
 .layer-name { font-size:11px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; width:80px; flex-shrink:0; color:var(--text-dim); }
 .layer-score { font-family:'DM Mono',monospace; font-size:12px; font-weight:700; width:36px; text-align:right; }
 .layer-track { flex:1; height:6px; background:var(--bg4); border-radius:3px; overflow:hidden; }
@@ -129,35 +129,32 @@
   opacity: 1; transform: translateY(0); pointer-events: auto;
 }
 
-/* ── Momentum breakdown panel ── */
-.mom-breakdown {
-  margin: -4px 0 10px 90px;
-  background: var(--bg3);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 10px 12px;
+/* ── Layer sections & collapsible breakdowns ── */
+.layer-section { margin-bottom: 10px; }
+.expand-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 18px; height: 18px; border-radius: 4px;
+  font-size: 10px; color: var(--text-muted); flex-shrink: 0;
+  border: 1px solid var(--border2); background: var(--bg3);
+  cursor: pointer; padding: 0;
+  transition: transform .2s, color .15s, border-color .15s;
 }
-.mom-summary {
-  font-size: 11px; color: var(--text-dim);
-  font-style: italic; line-height: 1.4; margin-bottom: 8px;
+.expand-btn:hover { color: var(--orange); border-color: var(--orange); }
+.expand-btn.open { transform: rotate(180deg); color: var(--orange); border-color: var(--orange); }
+.layer-breakdown {
+  display: none; margin: 4px 0 0 90px;
+  background: var(--bg3); border: 1px solid var(--border);
+  border-radius: 8px; padding: 10px 12px;
 }
-.mom-comp {
-  display: flex; align-items: baseline; gap: 8px;
-  font-size: 11px; padding: 4px 0;
-  border-bottom: 1px solid var(--border);
-}
-.mom-comp:last-child { border-bottom: none; }
-.mom-comp-name {
-  font-family: 'DM Mono', monospace; font-size: 10px;
-  font-weight: 700; color: var(--text-muted);
-  width: 68px; flex-shrink: 0;
-}
-.mom-comp-val {
-  font-family: 'DM Mono', monospace; font-size: 11px;
-  font-weight: 700; width: 54px; flex-shrink: 0;
-}
-.mom-comp-lbl { color: var(--text-dim); flex: 1; line-height: 1.4; }
-.mom-divergence { font-weight: 700; margin-left: 4px; }
+.layer-section.open .layer-breakdown { display: block; }
+/* ── Shared breakdown content styles ── */
+.bd-summary { font-size: 11px; color: var(--text-dim); font-style: italic; line-height: 1.4; margin-bottom: 8px; }
+.bd-row { display: flex; align-items: baseline; gap: 8px; font-size: 11px; padding: 4px 0; border-bottom: 1px solid var(--border); }
+.bd-row:last-child { border-bottom: none; }
+.bd-name { font-family:'DM Mono',monospace; font-size:10px; font-weight:700; color:var(--text-muted); width:68px; flex-shrink:0; }
+.bd-val  { font-family:'DM Mono',monospace; font-size:11px; font-weight:700; width:54px; flex-shrink:0; }
+.bd-lbl  { color: var(--text-dim); flex: 1; line-height: 1.4; }
+.bd-divergence { font-weight: 700; margin-left: 4px; }
 </style>
 {% endblock %}
 
@@ -438,20 +435,21 @@ function renderResult(d) {
     const score  = layer.score || 0;
     const pct    = Math.round(score / l.max * 100);
     const reason = layer.reason || (layer.reasons && layer.reasons[0]) || '';
-    let rowHtml = `<div class="layer-row">
-      <div class="layer-name">${l.label}</div>
-      <div class="layer-track"><div class="layer-fill" style="width:${pct}%"></div></div>
-      <div class="layer-score">${score}/${l.max}</div>
-      <div class="tooltip-wrap">
-        <button class="info-btn" onclick="toggleTooltip(this)" aria-label="${l.label} explanation">ⓘ</button>
-        <div class="tooltip-box">${l.tooltip}</div>
+    const bdHtml = renderLayerBreakdown(l.key, layer, d.price);
+    return `<div class="layer-section">
+      <div class="layer-row">
+        <div class="layer-name">${l.label}</div>
+        <div class="layer-track"><div class="layer-fill" style="width:${pct}%"></div></div>
+        <div class="layer-score">${score}/${l.max}</div>
+        <div class="tooltip-wrap">
+          <button class="info-btn" onclick="toggleTooltip(this)" aria-label="${l.label} explanation">ⓘ</button>
+          <div class="tooltip-box">${l.tooltip}</div>
+        </div>
+        <button class="expand-btn" onclick="toggleBreakdown(this)" aria-label="Expand ${l.label}">▾</button>
       </div>
-    </div>
-    <div class="layer-reason" style="margin-bottom:${l.key==='momentum'?'4px':'10px'};padding-left:90px">${reason}</div>`;
-    if (l.key === 'momentum' && layer.breakdown) {
-      rowHtml += renderMomentumBreakdown(layer.breakdown);
-    }
-    return rowHtml;
+      <div class="layer-reason" style="margin-bottom:4px;padding-left:90px">${reason}</div>
+      <div class="layer-breakdown">${bdHtml}</div>
+    </div>`;
   }).join('');
 
   // Discipline
@@ -737,6 +735,41 @@ function escHtml(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
 
+// ── Layer breakdown dispatcher ────────────────────────────────────────────────
+function renderLayerBreakdown(key, layer, price) {
+  switch (key) {
+    case 'trend':       return renderTrendBreakdown(layer, price);
+    case 'momentum':    return layer.breakdown ? renderMomentumBreakdown(layer.breakdown) : '';
+    case 'volume':      return renderVolumeBreakdown(layer);
+    case 'structure':   return renderStructureBreakdown(layer);
+    case 'catalyst':    return renderCatalystBreakdown(layer);
+    case 'smart_money': return renderSmartMoneyBreakdown(layer);
+    default: return '';
+  }
+}
+
+function renderTrendBreakdown(layer, price) {
+  const emas = [
+    {name:'EMA20',  val:layer.ema20},
+    {name:'EMA50',  val:layer.ema50},
+    {name:'EMA200', val:layer.ema200},
+  ];
+  const valid = emas.filter(e => e.val != null);
+  const aboveCnt = valid.filter(e => price > e.val).length;
+  const summary = aboveCnt === valid.length && valid.length > 0
+    ? 'Clean uptrend — price above all moving averages'
+    : aboveCnt === 0 && valid.length > 0
+    ? 'Downtrend — price below all moving averages'
+    : `Mixed — above ${aboveCnt} of ${valid.length} moving averages`;
+  const rows = emas.map(e => {
+    if (e.val == null) return `<div class="bd-row"><span class="bd-name">${e.name}</span><span class="bd-val" style="color:var(--text-muted)">—</span><span class="bd-lbl">insufficient data</span></div>`;
+    const pct = (price - e.val) / e.val * 100;
+    const c = pct >= 0 ? 'var(--green)' : 'var(--red)';
+    return `<div class="bd-row"><span class="bd-name">${e.name}</span><span class="bd-val" style="color:${c}">$${fmt(e.val)}</span><span class="bd-lbl" style="color:${c}">${pct>=0?'+':''}${pct.toFixed(1)}% ${pct>=0?'above':'below'}</span></div>`;
+  }).join('');
+  return `<div class="bd-summary">${escHtml(summary)}</div>${rows}`;
+}
+
 function renderMomentumBreakdown(bd) {
   const rsiNum = bd.rsi != null ? bd.rsi.toFixed(1) : '—';
   const rsiColor = bd.rsi == null ? 'var(--text-muted)'
@@ -745,56 +778,105 @@ function renderMomentumBreakdown(bd) {
     : bd.rsi >= 45 ? 'var(--green)'
     : bd.rsi < 30 ? 'var(--blue)' : 'var(--text-dim)';
   const divSpan = bd.divergence === 'bearish'
-    ? '<span class="mom-divergence" style="color:var(--red)"> ⚠ Bearish divergence</span>'
+    ? '<span class="bd-divergence" style="color:var(--red)"> ⚠ Bearish divergence</span>'
     : bd.divergence === 'bullish'
-    ? '<span class="mom-divergence" style="color:var(--green)"> ↑ Bullish divergence</span>'
+    ? '<span class="bd-divergence" style="color:var(--green)"> ↑ Bullish divergence</span>'
     : '';
-
   const m = bd.macd;
   let macdVal = '—', macdLbl = '—', macdColor = 'var(--text-muted)';
   if (m) {
     const bullish = m.state === 'turning_up' || m.state === 'above_signal';
     const fading  = m.hist_direction === 'fading';
-    macdColor = m.state === 'turning_up'  ? 'var(--green)'
-      : m.state === 'turning_down'        ? 'var(--red)'
-      : bullish && fading                 ? 'var(--yellow)'
-      : bullish                           ? 'var(--green)' : 'var(--red)';
-    const stateLabel = {
-      turning_up: 'Turning up', turning_down: 'Turning down',
-      above_signal: 'Above signal', below_signal: 'Below signal'
-    }[m.state] || m.state;
+    macdColor = m.state === 'turning_up' ? 'var(--green)'
+      : m.state === 'turning_down'       ? 'var(--red)'
+      : bullish && fading                ? 'var(--yellow)'
+      : bullish                          ? 'var(--green)' : 'var(--red)';
+    const stateLabel = {turning_up:'Turning up', turning_down:'Turning down',
+      above_signal:'Above signal', below_signal:'Below signal'}[m.state] || m.state;
     macdVal = (m.histogram >= 0 ? '+' : '') + m.histogram.toFixed(3);
     macdLbl = stateLabel + (m.hist_direction ? `, histogram ${m.hist_direction}` : '');
   }
-
   const r = bd.roc;
   let rocVal = '—', rocLbl = '—', rocColor = 'var(--text-muted)';
   if (r) {
     rocVal = (r.value >= 0 ? '+' : '') + r.value.toFixed(1) + '%';
     rocLbl = r.label;
-    rocColor = r.label === 'Strong' ? 'var(--green)'
-      : r.label === 'Mild'   ? 'var(--yellow)'
-      : r.label === 'Flat'   ? 'var(--text-dim)' : 'var(--red)';
+    rocColor = r.label === 'Strong' ? 'var(--green)' : r.label === 'Mild' ? 'var(--yellow)'
+      : r.label === 'Flat' ? 'var(--text-dim)' : 'var(--red)';
   }
+  return `<div class="bd-summary">${escHtml(bd.summary || '')}</div>
+    <div class="bd-row"><span class="bd-name">RSI (14)</span><span class="bd-val" style="color:${rsiColor}">${rsiNum}</span><span class="bd-lbl">${escHtml(bd.rsi_label || '—')}${divSpan}</span></div>
+    <div class="bd-row"><span class="bd-name">MACD</span><span class="bd-val" style="color:${macdColor}">${escHtml(macdVal)}</span><span class="bd-lbl">${escHtml(macdLbl)}</span></div>
+    <div class="bd-row"><span class="bd-name">ROC (10d)</span><span class="bd-val" style="color:${rocColor}">${escHtml(rocVal)}</span><span class="bd-lbl">${escHtml(rocLbl)}</span></div>`;
+}
 
-  return `<div class="mom-breakdown">
-    <div class="mom-summary">${escHtml(bd.summary || '')}</div>
-    <div class="mom-comp">
-      <span class="mom-comp-name">RSI (14)</span>
-      <span class="mom-comp-val" style="color:${rsiColor}">${rsiNum}</span>
-      <span class="mom-comp-lbl">${escHtml(bd.rsi_label || '—')}${divSpan}</span>
-    </div>
-    <div class="mom-comp">
-      <span class="mom-comp-name">MACD</span>
-      <span class="mom-comp-val" style="color:${macdColor}">${escHtml(macdVal)}</span>
-      <span class="mom-comp-lbl">${escHtml(macdLbl)}</span>
-    </div>
-    <div class="mom-comp">
-      <span class="mom-comp-name">ROC (10d)</span>
-      <span class="mom-comp-val" style="color:${rocColor}">${escHtml(rocVal)}</span>
-      <span class="mom-comp-lbl">${escHtml(rocLbl)}</span>
-    </div>
-  </div>`;
+function renderVolumeBreakdown(layer) {
+  const ratio = layer.ratio;
+  const ratioColor = ratio == null ? 'var(--text-muted)'
+    : ratio >= 2 ? 'var(--green)' : ratio >= 1 ? 'var(--yellow)' : 'var(--red)';
+  const ratioLbl = ratio == null ? '—'
+    : ratio >= 2 ? 'exceptional conviction'
+    : ratio >= 1.5 ? 'strong volume'
+    : ratio >= 1 ? 'normal participation'
+    : 'below average — suspect move';
+  const fv = v => v == null ? '—' : v >= 1e6 ? (v/1e6).toFixed(2)+'M' : v >= 1e3 ? Math.round(v/1e3)+'K' : String(Math.round(v));
+  return `<div class="bd-summary">${escHtml(layer.reason || '—')}</div>
+    <div class="bd-row"><span class="bd-name">Today</span><span class="bd-val" style="color:var(--text)">${fv(layer.vol_today)}</span><span class="bd-lbl">shares traded</span></div>
+    <div class="bd-row"><span class="bd-name">20d avg</span><span class="bd-val" style="color:var(--text-muted)">${fv(layer.avg20)}</span><span class="bd-lbl">daily average</span></div>
+    <div class="bd-row"><span class="bd-name">Ratio</span><span class="bd-val" style="color:${ratioColor}">${ratio != null ? ratio.toFixed(1)+'×' : '—'}</span><span class="bd-lbl" style="color:${ratioColor}">${escHtml(ratioLbl)}</span></div>`;
+}
+
+function renderStructureBreakdown(layer) {
+  const ext = layer.extension_pct;
+  const extColor = ext == null ? 'var(--text-muted)'
+    : ext < 3 ? 'var(--green)' : ext < 6 ? 'var(--yellow)'
+    : ext < 10 ? 'var(--orange)' : 'var(--red)';
+  const extLbl = ext == null ? '—'
+    : ext < 3 ? 'at support — ideal entry'
+    : ext < 6 ? 'slightly extended — ok'
+    : ext < 10 ? 'extended — wait for pullback'
+    : ext < 15 ? 'very extended — high risk'
+    : 'FOMO territory — do NOT chase';
+  return `<div class="bd-summary">${escHtml(layer.reason || '—')}</div>
+    <div class="bd-row"><span class="bd-name">EMA20</span><span class="bd-val" style="color:var(--text-dim)">${layer.ema20 != null ? '$'+fmt(layer.ema20) : '—'}</span><span class="bd-lbl">20-day moving average support</span></div>
+    <div class="bd-row"><span class="bd-name">Extension</span><span class="bd-val" style="color:${extColor}">${ext != null ? (ext>=0?'+':'')+ext.toFixed(1)+'%' : '—'}</span><span class="bd-lbl" style="color:${extColor}">${escHtml(extLbl)}</span></div>`;
+}
+
+function renderCatalystBreakdown(layer) {
+  const headlines = layer.headlines || [];
+  const hdRows = headlines.length
+    ? headlines.map(h => `<div class="bd-row" style="align-items:flex-start"><span class="bd-name" style="padding-top:1px">•</span><span class="bd-lbl" style="flex:1">${escHtml(h)}</span></div>`).join('')
+    : `<div class="bd-row"><span class="bd-lbl" style="color:var(--text-muted)">No headlines found</span></div>`;
+  return `<div class="bd-summary">${escHtml(layer.reason || '—')}</div>${hdRows}`;
+}
+
+function renderSmartMoneyBreakdown(layer) {
+  if (!layer.available) return `<div class="bd-summary" style="font-style:normal;color:var(--text-muted)">UW API not configured</div>`;
+  const ev = layer.evidence || {};
+  const flows = ev.flow || [];
+  const bullF = flows.filter(f => f.direction==='BULLISH' && f.at_ask);
+  const bearF = flows.filter(f => f.direction==='BEARISH' && f.at_ask);
+  const flowColor = bullF.length > bearF.length ? 'var(--green)' : bearF.length > bullF.length ? 'var(--red)' : 'var(--text-muted)';
+  const flowLbl = flows.length === 0 ? 'no unusual flow' : `${bullF.length} bullish, ${bearF.length} bearish at ask`;
+  const dps = ev.darkpool || [];
+  const bigDps = dps.filter(p => p.notional >= 1_000_000);
+  const dpColor = bigDps.length ? 'var(--blue)' : 'var(--text-muted)';
+  const dpLbl = bigDps.length ? `${bigDps.length} print(s) ≥$1M` : dps.length ? `${dps.length} small print(s)` : 'none';
+  const ins = (ev.insider || []).filter(i => i.is_buy && i.value >= 100000);
+  const insColor = ins.length ? 'var(--green)' : 'var(--text-muted)';
+  const insLbl = ins.length ? `${ins.length} buy(s) ≥$100k` : 'none recent';
+  const notes = layer.notes || [];
+  const summary = (notes[0] || layer.reason || 'No unusual activity') + ' — full detail in Smart Money card below';
+  return `<div class="bd-summary">${escHtml(summary)}</div>
+    <div class="bd-row"><span class="bd-name">Options</span><span class="bd-val" style="color:${flowColor}">${flows.length ? flows.length+'×' : '—'}</span><span class="bd-lbl" style="color:${flowColor}">${escHtml(flowLbl)}</span></div>
+    <div class="bd-row"><span class="bd-name">Dark pool</span><span class="bd-val" style="color:${dpColor}">${dps.length ? dps.length+'×' : '—'}</span><span class="bd-lbl" style="color:${dpColor}">${escHtml(dpLbl)}</span></div>
+    <div class="bd-row"><span class="bd-name">Insider</span><span class="bd-val" style="color:${insColor}">${ins.length ? ins.length+'×' : '—'}</span><span class="bd-lbl" style="color:${insColor}">${escHtml(insLbl)}</span></div>`;
+}
+
+function toggleBreakdown(btn) {
+  const section = btn.closest('.layer-section');
+  const isOpen = section.classList.toggle('open');
+  btn.classList.toggle('open', isOpen);
 }
 
 function toggleHelp() {
