@@ -128,6 +128,36 @@
 .tooltip-wrap.active .tooltip-box {
   opacity: 1; transform: translateY(0); pointer-events: auto;
 }
+
+/* ── Momentum breakdown panel ── */
+.mom-breakdown {
+  margin: -4px 0 10px 90px;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+.mom-summary {
+  font-size: 11px; color: var(--text-dim);
+  font-style: italic; line-height: 1.4; margin-bottom: 8px;
+}
+.mom-comp {
+  display: flex; align-items: baseline; gap: 8px;
+  font-size: 11px; padding: 4px 0;
+  border-bottom: 1px solid var(--border);
+}
+.mom-comp:last-child { border-bottom: none; }
+.mom-comp-name {
+  font-family: 'DM Mono', monospace; font-size: 10px;
+  font-weight: 700; color: var(--text-muted);
+  width: 68px; flex-shrink: 0;
+}
+.mom-comp-val {
+  font-family: 'DM Mono', monospace; font-size: 11px;
+  font-weight: 700; width: 54px; flex-shrink: 0;
+}
+.mom-comp-lbl { color: var(--text-dim); flex: 1; line-height: 1.4; }
+.mom-divergence { font-weight: 700; margin-left: 4px; }
 </style>
 {% endblock %}
 
@@ -408,7 +438,7 @@ function renderResult(d) {
     const score  = layer.score || 0;
     const pct    = Math.round(score / l.max * 100);
     const reason = layer.reason || (layer.reasons && layer.reasons[0]) || '';
-    return `<div class="layer-row">
+    let rowHtml = `<div class="layer-row">
       <div class="layer-name">${l.label}</div>
       <div class="layer-track"><div class="layer-fill" style="width:${pct}%"></div></div>
       <div class="layer-score">${score}/${l.max}</div>
@@ -417,7 +447,11 @@ function renderResult(d) {
         <div class="tooltip-box">${l.tooltip}</div>
       </div>
     </div>
-    <div class="layer-reason" style="margin-bottom:10px;padding-left:90px">${reason}</div>`;
+    <div class="layer-reason" style="margin-bottom:${l.key==='momentum'?'4px':'10px'};padding-left:90px">${reason}</div>`;
+    if (l.key === 'momentum' && layer.breakdown) {
+      rowHtml += renderMomentumBreakdown(layer.breakdown);
+    }
+    return rowHtml;
   }).join('');
 
   // Discipline
@@ -701,6 +735,66 @@ function fmtMcap(v) {
 }
 function escHtml(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function renderMomentumBreakdown(bd) {
+  const rsiNum = bd.rsi != null ? bd.rsi.toFixed(1) : '—';
+  const rsiColor = bd.rsi == null ? 'var(--text-muted)'
+    : bd.rsi > 70 ? 'var(--red)'
+    : bd.rsi > 60 ? 'var(--yellow)'
+    : bd.rsi >= 45 ? 'var(--green)'
+    : bd.rsi < 30 ? 'var(--blue)' : 'var(--text-dim)';
+  const divSpan = bd.divergence === 'bearish'
+    ? '<span class="mom-divergence" style="color:var(--red)"> ⚠ Bearish divergence</span>'
+    : bd.divergence === 'bullish'
+    ? '<span class="mom-divergence" style="color:var(--green)"> ↑ Bullish divergence</span>'
+    : '';
+
+  const m = bd.macd;
+  let macdVal = '—', macdLbl = '—', macdColor = 'var(--text-muted)';
+  if (m) {
+    const bullish = m.state === 'turning_up' || m.state === 'above_signal';
+    const fading  = m.hist_direction === 'fading';
+    macdColor = m.state === 'turning_up'  ? 'var(--green)'
+      : m.state === 'turning_down'        ? 'var(--red)'
+      : bullish && fading                 ? 'var(--yellow)'
+      : bullish                           ? 'var(--green)' : 'var(--red)';
+    const stateLabel = {
+      turning_up: 'Turning up', turning_down: 'Turning down',
+      above_signal: 'Above signal', below_signal: 'Below signal'
+    }[m.state] || m.state;
+    macdVal = (m.histogram >= 0 ? '+' : '') + m.histogram.toFixed(3);
+    macdLbl = stateLabel + (m.hist_direction ? `, histogram ${m.hist_direction}` : '');
+  }
+
+  const r = bd.roc;
+  let rocVal = '—', rocLbl = '—', rocColor = 'var(--text-muted)';
+  if (r) {
+    rocVal = (r.value >= 0 ? '+' : '') + r.value.toFixed(1) + '%';
+    rocLbl = r.label;
+    rocColor = r.label === 'Strong' ? 'var(--green)'
+      : r.label === 'Mild'   ? 'var(--yellow)'
+      : r.label === 'Flat'   ? 'var(--text-dim)' : 'var(--red)';
+  }
+
+  return `<div class="mom-breakdown">
+    <div class="mom-summary">${escHtml(bd.summary || '')}</div>
+    <div class="mom-comp">
+      <span class="mom-comp-name">RSI (14)</span>
+      <span class="mom-comp-val" style="color:${rsiColor}">${rsiNum}</span>
+      <span class="mom-comp-lbl">${escHtml(bd.rsi_label || '—')}${divSpan}</span>
+    </div>
+    <div class="mom-comp">
+      <span class="mom-comp-name">MACD</span>
+      <span class="mom-comp-val" style="color:${macdColor}">${escHtml(macdVal)}</span>
+      <span class="mom-comp-lbl">${escHtml(macdLbl)}</span>
+    </div>
+    <div class="mom-comp">
+      <span class="mom-comp-name">ROC (10d)</span>
+      <span class="mom-comp-val" style="color:${rocColor}">${escHtml(rocVal)}</span>
+      <span class="mom-comp-lbl">${escHtml(rocLbl)}</span>
+    </div>
+  </div>`;
 }
 
 function toggleHelp() {

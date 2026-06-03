@@ -181,6 +181,88 @@ def _atr(candles, period=14):
     return round(atr, 4)
 
 
+def _ema_series(prices, period):
+    """Full EMA series; first (period-1) entries are None."""
+    if len(prices) < period:
+        return [None] * len(prices)
+    k = 2 / (period + 1)
+    result = [None] * (period - 1)
+    ema = sum(prices[:period]) / period
+    result.append(ema)
+    for p in prices[period:]:
+        ema = p * k + ema * (1 - k)
+        result.append(ema)
+    return result
+
+
+def _macd(closes, fast=12, slow=26, signal=9):
+    """MACD line, signal line, histogram state. None if < slow+signal bars."""
+    if len(closes) < slow + signal:
+        return None
+    fast_s = _ema_series(closes, fast)
+    slow_s = _ema_series(closes, slow)
+    macd_series = [f - s for f, s in zip(fast_s, slow_s)
+                   if f is not None and s is not None]
+    if len(macd_series) < signal:
+        return None
+    sig_series = _ema_series(macd_series, signal)
+    cur_macd = macd_series[-1]
+    cur_sig = sig_series[-1]
+    if cur_sig is None:
+        return None
+    prev_macd = macd_series[-2] if len(macd_series) >= 2 else None
+    prev_sig = (sig_series[-2]
+                if len(sig_series) >= 2 and sig_series[-2] is not None
+                else None)
+    cur_hist = round(cur_macd - cur_sig, 4)
+    prev_hist = (round(prev_macd - prev_sig, 4)
+                 if prev_macd is not None and prev_sig is not None else None)
+    if cur_macd > cur_sig:
+        crossed = prev_macd is not None and prev_sig is not None and prev_macd <= prev_sig
+        state = "turning_up" if crossed else "above_signal"
+    else:
+        crossed = prev_macd is not None and prev_sig is not None and prev_macd >= prev_sig
+        state = "turning_down" if crossed else "below_signal"
+    hist_dir = None
+    if prev_hist is not None:
+        hist_dir = "accelerating" if abs(cur_hist) > abs(prev_hist) else "fading"
+    return {
+        "line": round(cur_macd, 4),
+        "signal": round(cur_sig, 4),
+        "histogram": cur_hist,
+        "state": state,
+        "hist_direction": hist_dir,
+    }
+
+
+def _roc(closes, period=10):
+    """Rate of Change: % price change over `period` bars."""
+    if len(closes) <= period:
+        return None
+    past = closes[-(period + 1)]
+    return round((closes[-1] - past) / past * 100, 2) if past else None
+
+
+def _rsi_divergence(closes, rsi_period=14, lookback=20):
+    """
+    Bearish: price higher by >3%, RSI lower by >5 pts over lookback bars.
+    Bullish: price lower by >3%, RSI higher by >5 pts.
+    """
+    if len(closes) < rsi_period + lookback + 2:
+        return None
+    rsi_now = _rsi(closes, rsi_period)
+    rsi_past = _rsi(closes[:-lookback], rsi_period)
+    if rsi_now is None or rsi_past is None:
+        return None
+    price_chg = (closes[-1] - closes[-1 - lookback]) / closes[-1 - lookback] * 100
+    rsi_chg = rsi_now - rsi_past
+    if price_chg > 3 and rsi_chg < -5:
+        return "bearish"
+    if price_chg < -3 and rsi_chg > 5:
+        return "bullish"
+    return None
+
+
 # ─── Layer 1: TREND (0-25) ───────────────────────────────────────────────────
 
 def layer1_trend(price, ema20, ema50, ema200):
@@ -207,9 +289,10 @@ def layer1_trend(price, ema20, ema50, ema200):
 
 # ─── Layer 2: MOMENTUM / anti-FOMO (0-25) ────────────────────────────────────
 
-def layer2_momentum(rsi):
+def layer2_momentum(rsi, closes=None):
     if rsi is None:
-        return {"score": 0, "max": 25, "rsi": None, "reason": "Insufficient data"}
+        return {"score": 0, "max": 25, "rsi": None, "reason": "Insufficient data",
+                "breakdown": None}
     if 45 <= rsi <= 60:
         score, label = 25, "Ideal entry zone"
     elif 60 < rsi <= 65:
@@ -224,7 +307,52 @@ def layer2_momentum(rsi):
         score, label = 15, "Oversold bounce potential"
     else:
         score, label = 20, "Deeply oversold — mean reversion"
-    return {"score": score, "max": 25, "rsi": round(rsi, 1), "reason": label}
+
+    breakdown = None
+    if closes:
+        macd_data  = _macd(closes)
+        roc_val    = _roc(closes)
+        divergence = _rsi_divergence(closes)
+
+        if roc_val is None:
+            roc_info = None
+        else:
+            roc_label = ("Strong" if roc_val >= 5 else
+                         "Mild"   if roc_val >= 2 else
+                         "Flat"   if roc_val >= -2 else "Negative")
+            roc_info = {"value": roc_val, "label": roc_label}
+
+        score_word = "strong" if score >= 18 else "moderate" if score >= 10 else "weak"
+        parts = []
+        if divergence == "bearish":
+            parts.append("RSI bearish divergence — rally may be tiring")
+        elif rsi > 70:
+            parts.append("RSI overbought, watch for a pullback")
+        elif rsi < 30:
+            parts.append("deeply oversold, bounce potential")
+        if macd_data:
+            if macd_data["state"] == "turning_up":
+                parts.append("MACD turning up")
+            elif macd_data["state"] == "turning_down":
+                parts.append("MACD turning down")
+            elif macd_data.get("hist_direction") == "fading":
+                parts.append("MACD histogram fading")
+        if roc_info and roc_info["label"] == "Negative":
+            parts.append("ROC negative")
+
+        summary = (f"Momentum {score}/25 — {', '.join(parts)}" if parts
+                   else f"Momentum {score}/25 — {label.lower()}")
+        breakdown = {
+            "rsi": round(rsi, 1),
+            "rsi_label": label,
+            "macd": macd_data,
+            "roc": roc_info,
+            "divergence": divergence,
+            "summary": summary,
+        }
+
+    return {"score": score, "max": 25, "rsi": round(rsi, 1), "reason": label,
+            "breakdown": breakdown}
 
 
 # ─── Layer 3: VOLUME (0-20) ──────────────────────────────────────────────────
@@ -351,7 +479,7 @@ def run_full_analysis(ticker, mode="SWING"):
 
     # Run layers
     l1 = layer1_trend(price, ema20, ema50, ema200)
-    l2 = layer2_momentum(rsi)
+    l2 = layer2_momentum(rsi, closes)
     l3 = layer3_volume(vol, candles)
     l4 = layer4_structure(price, ema20)
     l5 = layer5_catalyst(ticker, news_items)
