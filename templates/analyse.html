@@ -101,12 +101,12 @@
 /* ── Layer info tooltips ── */
 .info-btn {
   display: inline-flex; align-items: center; justify-content: center;
-  width: 16px; height: 16px; border-radius: 50%;
-  font-size: 10px; color: var(--text-muted);
+  width: 18px; height: 18px; border-radius: 50%;
+  font-size: 11px; color: var(--text-dim);
   cursor: pointer; flex-shrink: 0;
-  border: none; background: transparent; padding: 0;
+  border: 1px solid var(--border2); background: var(--bg3); padding: 0;
 }
-.info-btn:hover { color: var(--orange); }
+.info-btn:hover { color: var(--orange); border-color: var(--orange); }
 .tooltip-wrap { position: relative; display: inline-flex; }
 .tooltip-box {
   position: absolute;
