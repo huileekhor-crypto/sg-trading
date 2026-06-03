@@ -430,7 +430,7 @@ function renderResult(d) {
     const score  = layer.score || 0;
     const pct    = Math.round(score / l.max * 100);
     const reason = layer.reason || (layer.reasons && layer.reasons[0]) || '';
-    const bdHtml = renderLayerBreakdown(l.key, layer, d.price);
+    const bdHtml = renderLayerBreakdown(l.key, layer, d.price, d.news);
     return `<div class="layer-section">
       <div class="layer-row">
         <div class="layer-name">${l.label}</div>
@@ -718,13 +718,13 @@ function escHtml(s) {
 }
 
 // ── Layer breakdown dispatcher ────────────────────────────────────────────────
-function renderLayerBreakdown(key, layer, price) {
+function renderLayerBreakdown(key, layer, price, news) {
   switch (key) {
     case 'trend':       return renderTrendBreakdown(layer, price);
     case 'momentum':    return layer.breakdown ? renderMomentumBreakdown(layer.breakdown) : '';
     case 'volume':      return renderVolumeBreakdown(layer);
     case 'structure':   return renderStructureBreakdown(layer);
-    case 'catalyst':    return renderCatalystBreakdown(layer, d.news);
+    case 'catalyst':    return renderCatalystBreakdown(layer, news);
     case 'smart_money': return renderSmartMoneyBreakdown(layer);
     default: return '';
   }
