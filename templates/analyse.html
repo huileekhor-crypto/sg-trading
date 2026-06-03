@@ -56,8 +56,8 @@
   cursor:pointer;
 }
 .ibkr-box:hover { border-color:#444; }
-.news-item { padding:8px 0; border-bottom:1px solid var(--border); font-size:12px; }
-.news-item:last-child { border-bottom:none; }
+.news-link { color:var(--text); font-weight:600; text-decoration:underline; text-underline-offset:2px; text-decoration-color:var(--border2); }
+.news-link:hover { color:var(--orange); text-decoration-color:var(--orange); }
 
 /* ── Scoring help panel ── */
 .help-panel {
@@ -308,11 +308,6 @@
     <div class="fund-grid" id="fundGrid"></div>
   </div>
 
-  <!-- News -->
-  <div class="card" style="margin-bottom:12px" id="newsCard">
-    <div class="card-title">Recent News</div>
-    <div id="newsList"></div>
-  </div>
 
 </div>
 
@@ -682,19 +677,6 @@ function renderResult(d) {
     `<div class="fund-item"><div class="fund-label">${fi.label}</div><div class="fund-val">${fi.val}</div></div>`
   ).join('');
 
-  // News
-  const news = d.news || [];
-  if (news.length) {
-    document.getElementById('newsCard').style.display = '';
-    document.getElementById('newsList').innerHTML = news.map(n =>
-      `<div class="news-item">
-        <div style="font-weight:600">${escHtml(n.headline||'')}</div>
-        <div style="color:var(--text-muted);font-size:10px;margin-top:2px">${n.source||''}</div>
-      </div>`
-    ).join('');
-  } else {
-    document.getElementById('newsCard').style.display = 'none';
-  }
 }
 
 function copyIbkr() {
@@ -742,7 +724,7 @@ function renderLayerBreakdown(key, layer, price) {
     case 'momentum':    return layer.breakdown ? renderMomentumBreakdown(layer.breakdown) : '';
     case 'volume':      return renderVolumeBreakdown(layer);
     case 'structure':   return renderStructureBreakdown(layer);
-    case 'catalyst':    return renderCatalystBreakdown(layer);
+    case 'catalyst':    return renderCatalystBreakdown(layer, d.news);
     case 'smart_money': return renderSmartMoneyBreakdown(layer);
     default: return '';
   }
@@ -842,11 +824,20 @@ function renderStructureBreakdown(layer) {
     <div class="bd-row"><span class="bd-name">Extension</span><span class="bd-val" style="color:${extColor}">${ext != null ? (ext>=0?'+':'')+ext.toFixed(1)+'%' : '—'}</span><span class="bd-lbl" style="color:${extColor}">${escHtml(extLbl)}</span></div>`;
 }
 
-function renderCatalystBreakdown(layer) {
-  const headlines = layer.headlines || [];
-  const hdRows = headlines.length
-    ? headlines.map(h => `<div class="bd-row" style="align-items:flex-start"><span class="bd-name" style="padding-top:1px">•</span><span class="bd-lbl" style="flex:1">${escHtml(h)}</span></div>`).join('')
-    : `<div class="bd-row"><span class="bd-lbl" style="color:var(--text-muted)">No headlines found</span></div>`;
+function renderCatalystBreakdown(layer, newsItems) {
+  const items = (newsItems && newsItems.length) ? newsItems : (layer.headlines || []).map(h => ({headline: h}));
+  const hdRows = items.length
+    ? items.map(n => {
+        const headline = n.headline || String(n);
+        const linkEl = n.url
+          ? `<a class="news-link" href="${escHtml(n.url)}" target="_blank" rel="noopener noreferrer">${escHtml(headline)}</a>`
+          : `<span style="font-weight:600">${escHtml(headline)}</span>`;
+        const srcEl = n.source
+          ? `<div style="color:var(--text-muted);font-size:10px;margin-top:2px">${escHtml(n.source)}</div>`
+          : '';
+        return `<div style="padding:5px 0;border-bottom:1px solid var(--border);font-size:11px;line-height:1.4">${linkEl}${srcEl}</div>`;
+      }).join('')
+    : `<div style="font-size:11px;color:var(--text-muted);padding:4px 0">No headlines found</div>`;
   return `<div class="bd-summary">${escHtml(layer.reason || '—')}</div>${hdRows}`;
 }
 
