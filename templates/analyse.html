@@ -58,6 +58,76 @@
 .ibkr-box:hover { border-color:#444; }
 .news-item { padding:8px 0; border-bottom:1px solid var(--border); font-size:12px; }
 .news-item:last-child { border-bottom:none; }
+
+/* ── Scoring help panel ── */
+.help-panel {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  margin-bottom: 16px;
+  overflow: hidden;
+}
+.help-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  user-select: none;
+  border: none;
+  background: transparent;
+  width: 100%;
+  text-align: left;
+}
+.help-toggle:hover { color: var(--text); }
+.help-chevron { transition: transform .2s; font-style: normal; font-size: 12px; }
+.help-panel.open .help-chevron { transform: rotate(180deg); }
+.help-body { display: none; padding: 0 16px 16px; }
+.help-panel.open .help-body { display: block; }
+.help-layer { margin-bottom: 14px; }
+.help-layer:last-child { margin-bottom: 0; }
+.help-layer-name {
+  font-size: 10px; font-weight: 800; letter-spacing: .1em;
+  text-transform: uppercase; color: var(--orange); margin-bottom: 4px;
+}
+.help-layer-text { font-size: 12px; color: var(--text-dim); line-height: 1.6; }
+.help-layer-text strong { color: var(--text); font-weight: 700; }
+
+/* ── Layer info tooltips ── */
+.info-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 16px; height: 16px; border-radius: 50%;
+  font-size: 10px; color: var(--text-muted);
+  cursor: pointer; flex-shrink: 0;
+  border: none; background: transparent; padding: 0;
+}
+.info-btn:hover { color: var(--orange); }
+.tooltip-wrap { position: relative; display: inline-flex; }
+.tooltip-box {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  right: 0;
+  width: 240px;
+  max-width: calc(100vw - 48px);
+  background: var(--bg4);
+  border: 1px solid var(--border2);
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 11px; color: var(--text-dim); line-height: 1.5;
+  z-index: 200; pointer-events: none;
+  opacity: 0; transform: translateY(4px);
+  transition: opacity .15s, transform .15s;
+  text-align: left; font-weight: 400; letter-spacing: 0; text-transform: none;
+}
+.tooltip-wrap:hover .tooltip-box,
+.tooltip-wrap.active .tooltip-box {
+  opacity: 1; transform: translateY(0); pointer-events: auto;
+}
 </style>
 {% endblock %}
 
@@ -72,6 +142,68 @@
     <button class="mode-btn" id="btnLT" onclick="setMode('LONG-TERM')">Long-Term</button>
   </div>
   <button class="btn btn-primary" onclick="runAnalysis()" id="analyseBtn">Analyse</button>
+</div>
+
+<!-- Scoring help panel -->
+<div class="help-panel" id="helpPanel">
+  <button class="help-toggle" onclick="toggleHelp()" aria-expanded="false" aria-controls="helpBody">
+    <span>ⓘ How scoring works</span>
+    <span class="help-chevron">▾</span>
+  </button>
+  <div class="help-body" id="helpBody">
+
+    <div class="help-layer">
+      <div class="help-layer-name">Trend — 25 pts</div>
+      <div class="help-layer-text">
+        <strong>Which way is it going?</strong> Price is compared against the 20, 50, and 200-day moving averages.
+        High score = clean uptrend across all timeframes. Low score = price below its key averages, trend is against you.
+      </div>
+    </div>
+
+    <div class="help-layer">
+      <div class="help-layer-name">Momentum — 25 pts</div>
+      <div class="help-layer-text">
+        <strong>How strong is the move, and is it speeding up or fading?</strong> Three signals combined:
+        <br>• <strong>RSI</strong> — 45–60 is the ideal healthy range; above 70 flags overbought risk; bearish divergence (price up, RSI down) is an early warning the rally is tired.
+        <br>• <strong>MACD</strong> — fast vs slow moving average crossovers + histogram direction; a MACD turning up signals a momentum shift.
+        <br>• <strong>Rate of Change</strong> — raw price speed over a lookback period.
+        <br><br>A <em>falling</em> momentum score on a stock that is still rising is often the first signal before price turns. Don't ignore it.
+      </div>
+    </div>
+
+    <div class="help-layer">
+      <div class="help-layer-name">Volume — 20 pts</div>
+      <div class="help-layer-text">
+        <strong>Do people believe this move?</strong> Today's volume vs the 20-day average.
+        A big move on high volume = conviction. The same move on thin volume = suspect — it can reverse easily with no follow-through.
+      </div>
+    </div>
+
+    <div class="help-layer">
+      <div class="help-layer-name">Structure — 20 pts</div>
+      <div class="help-layer-text">
+        <strong>Where is price vs key levels?</strong> Scores risk/reward based on distance from key moving averages.
+        Near support (price close to a rising EMA) = good entry. Extended far above EMA20 or sitting under heavy resistance = poor entry — you're buying at the top of the move with little room left.
+      </div>
+    </div>
+
+    <div class="help-layer">
+      <div class="help-layer-name">Catalyst — 10 pts</div>
+      <div class="help-layer-text">
+        <strong>Is there a reason to move?</strong> Scores recent news, earnings, analyst upgrades.
+        Deliberately low weight (10 pts) — catalysts cut both ways, and entering before earnings is gambling not trading. Never rely on this layer alone.
+      </div>
+    </div>
+
+    <div class="help-layer">
+      <div class="help-layer-name">Smart Money — 20 pts</div>
+      <div class="help-layer-text">
+        <strong>Are big players positioning?</strong> Aggregates unusual options flow (large premium, sweeps, at-ask trades), dark pool block prints, insider buys, and congressional trades via Unusual Whales.
+        This is the <em>noisiest</em> signal. Always check the underlying evidence in the Smart Money card below — a high score without clear evidence is misleading.
+      </div>
+    </div>
+
+  </div>
 </div>
 
 <div id="result" style="display:none">
@@ -264,12 +396,12 @@ function renderResult(d) {
   // Layers
   const layers = d.layers || {};
   const layerDefs = [
-    {key:'trend',      label:'Trend',      max:25},
-    {key:'momentum',   label:'Momentum',   max:25},
-    {key:'volume',     label:'Volume',     max:20},
-    {key:'structure',  label:'Structure',  max:20},
-    {key:'catalyst',   label:'Catalyst',   max:10},
-    {key:'smart_money',label:'Smart Money',max:20},
+    {key:'trend',      label:'Trend',      max:25, tooltip:'Which way is it going? Compares price to 20/50/200-day moving averages. High score = clean uptrend across all timeframes.'},
+    {key:'momentum',   label:'Momentum',   max:25, tooltip:'How strong is the move — speeding up or fading? Combines RSI (45–60 healthy, &gt;70 overbought), MACD (momentum shift via crossovers), and Rate of Change. A <em>falling</em> momentum score while price still rises is an early warning the rally is tiring.'},
+    {key:'volume',     label:'Volume',     max:20, tooltip:'Do people believe this move? High volume = conviction. Low volume = suspect — the move can reverse without follow-through.'},
+    {key:'structure',  label:'Structure',  max:20, tooltip:'Where is price vs key levels? Near support (floor) = good risk/reward. Extended above EMA20 or under resistance = poor entry.'},
+    {key:'catalyst',   label:'Catalyst',   max:10, tooltip:'Is there a reason to move? Scores news, earnings, upgrades. Low weight (10 pts) — catalysts cut both ways and earnings are risky.'},
+    {key:'smart_money',label:'Smart Money',max:20, tooltip:'Are big players positioning? Scores unusual options flow, dark pool prints, and insider buys. Noisiest signal — always check the evidence card below, not just the number.'},
   ];
   document.getElementById('layers').innerHTML = layerDefs.map(l => {
     const layer  = layers[l.key] || {};
@@ -280,6 +412,10 @@ function renderResult(d) {
       <div class="layer-name">${l.label}</div>
       <div class="layer-track"><div class="layer-fill" style="width:${pct}%"></div></div>
       <div class="layer-score">${score}/${l.max}</div>
+      <div class="tooltip-wrap">
+        <button class="info-btn" onclick="toggleTooltip(this)" aria-label="${l.label} explanation">ⓘ</button>
+        <div class="tooltip-box">${l.tooltip}</div>
+      </div>
     </div>
     <div class="layer-reason" style="margin-bottom:10px;padding-left:90px">${reason}</div>`;
   }).join('');
@@ -566,6 +702,25 @@ function fmtMcap(v) {
 function escHtml(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
+
+function toggleHelp() {
+  const panel = document.getElementById('helpPanel');
+  const btn = panel.querySelector('.help-toggle');
+  const isOpen = panel.classList.toggle('open');
+  btn.setAttribute('aria-expanded', isOpen);
+}
+
+function toggleTooltip(btn) {
+  const wrap = btn.closest('.tooltip-wrap');
+  const wasActive = wrap.classList.contains('active');
+  document.querySelectorAll('.tooltip-wrap.active').forEach(el => el.classList.remove('active'));
+  if (!wasActive) wrap.classList.add('active');
+}
+document.addEventListener('click', e => {
+  if (!e.target.closest('.tooltip-wrap')) {
+    document.querySelectorAll('.tooltip-wrap.active').forEach(el => el.classList.remove('active'));
+  }
+});
 
 // Auto-analyse if ticker in URL
 const urlTicker = new URLSearchParams(window.location.search).get('ticker');
