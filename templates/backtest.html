@@ -1,58 +1,267 @@
 {% extends "base.html" %}
-{% set active = "journal" %}
+{% set active = "backtest" %}
 {% block title %}Backtest — SG Trading{% endblock %}
 
 {% block extra_css %}
 <style>
-.result-win  { color: var(--green); }
-.result-loss { color: var(--red); }
-.bt-row { display:flex; gap:8px; padding:8px 0; border-bottom:1px solid var(--border); font-size:12px; }
-.bt-row:last-child { border-bottom:none; }
+/* ── Parameters form ── */
+.bt-tickers { font-family:'DM Mono',monospace; font-size:12px; height:60px; resize:vertical; }
+
+/* ── Warning banners ── */
+.warn-red {
+  background:rgba(239,68,68,.1);
+  border:1px solid rgba(239,68,68,.35);
+  border-radius:8px;
+  padding:12px 16px;
+  color:var(--red);
+  font-size:13px;
+  font-weight:700;
+  margin-bottom:14px;
+}
+.warn-yellow {
+  background:rgba(234,179,8,.08);
+  border:1px solid rgba(234,179,8,.25);
+  border-radius:8px;
+  padding:10px 14px;
+  color:var(--yellow);
+  font-size:12px;
+  margin-bottom:14px;
+}
+.warn-green {
+  background:rgba(34,197,94,.08);
+  border:1px solid rgba(34,197,94,.25);
+  border-radius:8px;
+  padding:12px 16px;
+  color:var(--green);
+  font-size:13px;
+  font-weight:600;
+  margin-bottom:14px;
+}
+
+/* ── Verdict box ── */
+.verdict-box {
+  background:var(--bg3);
+  border:1px solid var(--border2);
+  border-radius:8px;
+  padding:14px;
+  font-size:13px;
+  line-height:1.6;
+  color:var(--text);
+  margin-bottom:14px;
+}
+.verdict-box strong { color:var(--orange); }
+
+/* ── Stat grids ── */
+.stats-5 { display:grid; grid-template-columns:repeat(5,1fr); gap:8px; }
+.stats-4 { display:grid; grid-template-columns:repeat(4,1fr); gap:8px; }
+.stats-3 { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; }
+@media(max-width:640px) {
+  .stats-5,.stats-4 { grid-template-columns:repeat(2,1fr); }
+  .stats-3          { grid-template-columns:repeat(2,1fr); }
+}
+.stat-sm .stat-val  { font-size:16px; }
+.stat-sm .stat-label{ font-size:9px; }
+
+/* ── IS/OOS comparison ── */
+.split-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+@media(max-width:480px){ .split-grid { grid-template-columns:1fr; } }
+.split-header {
+  font-size:10px; font-weight:800; letter-spacing:.1em; text-transform:uppercase;
+  margin-bottom:8px; color:var(--text-dim);
+}
+
+/* ── Regime table ── */
+.regime-table { width:100%; border-collapse:collapse; font-size:12px; }
+.regime-table th {
+  text-align:left; font-size:10px; font-weight:700; letter-spacing:.08em;
+  text-transform:uppercase; color:var(--text-muted); padding:6px 8px;
+  border-bottom:1px solid var(--border);
+}
+.regime-table td { padding:8px 8px; border-bottom:1px solid var(--border); }
+.regime-table tr:last-child td { border:none; }
+
+/* ── Equity curve ── */
+.curve-wrap {
+  position:relative; width:100%; height:140px;
+  background:var(--bg3); border-radius:8px; overflow:hidden;
+}
+#equitySvg { width:100%; height:100%; }
+.curve-zero { stroke:var(--border2); stroke-dasharray:4 4; }
+.curve-line { fill:none; stroke:var(--orange); stroke-width:1.5; stroke-linejoin:round; }
+.curve-area { opacity:.12; fill:var(--orange); }
+
+/* ── Trade table ── */
+.trade-tbl { width:100%; border-collapse:collapse; font-size:11px; }
+.trade-tbl th {
+  text-align:left; font-size:9px; font-weight:700; letter-spacing:.08em;
+  text-transform:uppercase; color:var(--text-muted); padding:5px 6px;
+  border-bottom:1px solid var(--border); white-space:nowrap;
+}
+.trade-tbl td { padding:6px 6px; border-bottom:1px solid var(--border); vertical-align:middle; }
+.trade-tbl tr:last-child td { border:none; }
+.trade-tbl tr:hover td { background:var(--bg3); }
+.r-pos { color:var(--green); font-weight:700; }
+.r-neg { color:var(--red);   font-weight:700; }
+.chip-on   { background:rgba(34,197,94,.1); color:var(--green); border-radius:4px; padding:1px 5px; font-size:9px; font-weight:700; }
+.chip-off  { background:rgba(239,68,68,.1);  color:var(--red);   border-radius:4px; padding:1px 5px; font-size:9px; font-weight:700; }
+.chip-neut { background:rgba(234,179,8,.1);  color:var(--yellow);border-radius:4px; padding:1px 5px; font-size:9px; font-weight:700; }
+
+/* ── Look-ahead notes ── */
+.la-item { padding:5px 0; border-bottom:1px solid var(--border); font-size:11px; color:var(--text-dim); }
+.la-item:last-child { border:none; }
+.la-clean { color:var(--green); }
+.la-warn  { color:var(--yellow); }
+
+/* ── Overfitting warning ── */
+.overfit-note {
+  margin-top:12px; font-size:11px; color:var(--text-muted);
+  border-top:1px solid var(--border); padding-top:10px;
+}
 </style>
 {% endblock %}
 
 {% block content %}
-<div style="font-size:18px;font-weight:800;margin-bottom:16px">Strategy Backtest</div>
-<div style="font-size:13px;color:var(--text-muted);margin-bottom:20px">
-  Validates the 6-layer SWING strategy on ~2 years of real data before risking real money.
+<div style="font-size:18px;font-weight:800;margin-bottom:4px">Edge Validation Backtest</div>
+<div style="font-size:12px;color:var(--text-muted);margin-bottom:20px">
+  Walk-forward test of your real 6-layer strategy on historical data. Proves (or disproves) edge before sizing up.
 </div>
 
-<div class="card" style="margin-bottom:16px">
+<!-- ── Parameters ── -->
+<div class="card" style="margin-bottom:14px">
   <div class="card-title">Parameters</div>
-  <div class="grid-2">
-    <div class="form-group">
-      <label class="form-label">Min Score (layers 1-4)</label>
-      <input class="form-input" id="btScore" type="number" value="85">
+  <div class="form-group">
+    <label class="form-label">Tickers (comma-separated)</label>
+    <textarea class="form-input bt-tickers" id="btTickers">NVDA,AMD,MU,MSFT,META,GOOGL,AAPL,AMZN,TSLA,AVGO,CRM,NOW,DDOG,CRWD,PLTR,SNOW,NBIS,SMCI,MRVL,ARM</textarea>
+  </div>
+  <div class="grid-2" style="margin-bottom:12px">
+    <div class="form-group" style="margin:0">
+      <label class="form-label">Min Score (L1-L4, 0-100)</label>
+      <input class="form-input" id="btScore" type="number" value="70" min="40" max="100">
     </div>
-    <div class="form-group">
-      <label class="form-label">Stop Loss %</label>
-      <input class="form-input" id="btStop" type="number" step="0.5" value="6">
+    <div class="form-group" style="margin:0">
+      <label class="form-label">Period (days)</label>
+      <input class="form-input" id="btPeriod" type="number" value="730" min="250" max="1500">
     </div>
-    <div class="form-group">
-      <label class="form-label">Target %</label>
-      <input class="form-input" id="btTarget" type="number" step="1" value="20">
+    <div class="form-group" style="margin:0">
+      <label class="form-label">Max Hold (trading days)</label>
+      <input class="form-input" id="btHold" type="number" value="20" min="5" max="60">
     </div>
-    <div class="form-group">
-      <label class="form-label">Max Hold Days</label>
-      <input class="form-input" id="btDays" type="number" value="20">
+    <div class="form-group" style="margin:0">
+      <label class="form-label">Slippage per side</label>
+      <input class="form-input" id="btSlip" type="number" step="0.001" value="0.001" min="0" max="0.01">
     </div>
   </div>
-  <button class="btn btn-primary" onclick="runBacktest()" id="btBtn">Run Backtest</button>
-  <div style="font-size:11px;color:var(--text-muted);margin-top:8px">Tests on 20 AI/tech/semi stocks · ~2 years · Takes 30-60s</div>
+  <div style="display:flex;align-items:center;gap:10px">
+    <button class="btn btn-primary" onclick="runBacktest()" id="btBtn">Run Backtest</button>
+    <label style="font-size:11px;color:var(--text-muted);display:flex;align-items:center;gap:5px;cursor:pointer">
+      <input type="checkbox" id="btSplit" checked> Show in-sample vs out-of-sample split
+    </label>
+  </div>
+  <div style="font-size:10px;color:var(--text-muted);margin-top:8px">
+    Score = L1-L4 only (max 100). L5 catalyst &amp; L6 smart money not available historically — conservative bias.
+    Entry at T+1 open · ATR-based stop (1.5×) &amp; target (3.0×) · 1% account risk per trade · slippage applied both sides.
+  </div>
 </div>
 
+<!-- ── Loading ── -->
+<div id="btLoading" style="display:none;text-align:center;padding:48px">
+  <div class="spin" style="width:28px;height:28px;border-width:3px"></div>
+  <div style="margin-top:12px;color:var(--text-muted);font-size:13px">Running walk-forward backtest…<br>
+    <span style="font-size:11px">Fetching candles + computing indicators for each ticker (~30-90s)</span>
+  </div>
+</div>
+
+<!-- ── Results ── -->
 <div id="btResults" style="display:none">
-  <div class="stats-grid" id="btSummary" style="margin-bottom:16px"></div>
-  <div class="card">
-    <div class="card-title">Recent Trades</div>
-    <div id="btTrades"></div>
-  </div>
-</div>
 
-<div id="btLoading" style="display:none;text-align:center;padding:40px">
-  <div class="spin" style="width:32px;height:32px;border-width:3px"></div>
-  <div style="margin-top:12px;color:var(--text-muted)">Running backtest... (30-60s)</div>
-</div>
+  <!-- Sample warning -->
+  <div id="btSmallSample" class="warn-red" style="display:none">
+    ⚠ SAMPLE TOO SMALL — fewer than 30 trades. These numbers are statistically meaningless.
+    Do not draw conclusions. Lower the min_score or add more tickers.
+  </div>
+
+  <!-- Verdict -->
+  <div id="btVerdict" class="verdict-box"></div>
+
+  <!-- Core stats -->
+  <div class="card" style="margin-bottom:12px">
+    <div class="card-title">Overall Results</div>
+    <div class="stats-5" id="btStats"></div>
+    <div class="stats-4" id="btStats2" style="margin-top:8px"></div>
+  </div>
+
+  <!-- Equity curve -->
+  <div class="card" style="margin-bottom:12px">
+    <div class="card-title">Equity Curve <span style="font-weight:400;font-size:10px;color:var(--text-muted)">(1% account risk / trade, $20k start)</span></div>
+    <div class="curve-wrap">
+      <svg id="equitySvg" viewBox="0 0 800 140" preserveAspectRatio="none"></svg>
+    </div>
+    <div style="display:flex;justify-content:space-between;margin-top:6px;font-size:10px;color:var(--text-muted)">
+      <span id="curveStart"></span><span id="curveEnd"></span>
+    </div>
+  </div>
+
+  <!-- In-sample vs out-of-sample -->
+  <div id="btSplitSection" class="card" style="margin-bottom:12px;display:none">
+    <div class="card-title">In-Sample vs Out-of-Sample
+      <span style="font-size:10px;font-weight:400;color:var(--text-muted)">&nbsp;— first half vs second half of the period</span>
+    </div>
+    <div class="split-grid" id="btSplitGrid"></div>
+    <div class="overfit-note">
+      If in-sample looks good but out-of-sample degrades sharply, the strategy may be
+      overfit to recent conditions. Both halves should show positive expectancy for the edge to be robust.
+    </div>
+  </div>
+
+  <!-- Regime breakdown -->
+  <div class="card" style="margin-bottom:12px">
+    <div class="card-title">Performance by Market Regime <span style="font-size:10px;font-weight:400;color:var(--text-muted)">&nbsp;(SPY vs EMA50/200)</span></div>
+    <table class="regime-table" id="btRegime">
+      <thead>
+        <tr>
+          <th>Regime</th><th>Trades</th><th>Win %</th>
+          <th>Exp R</th><th>Profit Factor</th><th>Total P&amp;L</th>
+        </tr>
+      </thead>
+      <tbody id="btRegimeBody"></tbody>
+    </table>
+  </div>
+
+  <!-- Trade log -->
+  <div class="card" style="margin-bottom:12px">
+    <div class="card-title">Trade Log <span style="font-size:10px;font-weight:400;color:var(--text-muted)" id="btTradeCount"></span></div>
+    <div style="overflow-x:auto">
+      <table class="trade-tbl">
+        <thead>
+          <tr>
+            <th>Date</th><th>Ticker</th><th>Score</th><th>RSI</th>
+            <th>Entry</th><th>Stop</th><th>Target</th><th>Exit</th>
+            <th>Days</th><th>Type</th><th>Regime</th><th>R-mult</th><th>P&amp;L $</th>
+          </tr>
+        </thead>
+        <tbody id="btTradeBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Look-ahead notes -->
+  <div class="card" style="margin-bottom:12px">
+    <div class="card-title">Look-Ahead Bias Audit</div>
+    <div id="btLANotes"></div>
+    <div class="overfit-note">
+      <strong>Overfitting warning:</strong> if you adjust any parameter (min_score, ATR multipliers,
+      max-hold) to improve these results, you are curve-fitting to historical noise. The only valid
+      test is forward performance on data you have not yet seen. Use these results to confirm an
+      existing hypothesis — not to build one.
+    </div>
+  </div>
+
+  <!-- Skipped / errors -->
+  <div id="btSkipped" style="display:none;margin-bottom:12px">
+    <div class="warn-yellow" id="btSkippedContent"></div>
+  </div>
+
+</div><!-- #btResults -->
 {% endblock %}
 
 {% block extra_js %}
@@ -63,53 +272,253 @@ async function runBacktest() {
   document.getElementById('btResults').style.display = 'none';
   document.getElementById('btLoading').style.display = '';
 
-  const score  = document.getElementById('btScore').value;
-  const stop   = document.getElementById('btStop').value;
-  const target = document.getElementById('btTarget').value;
-  const days   = document.getElementById('btDays').value;
+  const tickers = document.getElementById('btTickers').value.trim();
+  const score   = document.getElementById('btScore').value;
+  const period  = document.getElementById('btPeriod').value;
+  const hold    = document.getElementById('btHold').value;
+  const slip    = document.getElementById('btSlip').value;
+  const split   = document.getElementById('btSplit').checked ? 'true' : 'false';
 
-  const d = await api(
-    `/api/backtest/run?min_score=${score}&stop_pct=${stop}&target_pct=${target}&max_days=${days}`
-  );
+  let url = `/api/backtest/run?tickers=${encodeURIComponent(tickers)}`
+          + `&min_score=${score}&period_days=${period}&max_days=${hold}`
+          + `&slippage=${slip}&split=${split}`;
+
+  let d;
+  try {
+    d = await api(url);
+  } catch(e) {
+    toast('Backtest failed — check console');
+    document.getElementById('btLoading').style.display = 'none';
+    btn.disabled = false;
+    return;
+  }
+
   document.getElementById('btLoading').style.display = 'none';
   btn.disabled = false;
-
   if (!d) return;
 
-  const s = d.summary || {};
-  const items = [
-    {label:'Total Trades', val: s.total_trades||0, color:''},
-    {label:'Win Rate',     val: (s.win_rate||0)+'%', color: s.win_rate>=55?'var(--green)':'var(--red)'},
-    {label:'Profit Factor',val: s.profit_factor||0, color: s.profit_factor>=1.5?'var(--green)':'var(--yellow)'},
-    {label:'Avg Win',      val: '+'+(s.avg_win_pct||0)+'%', color:'var(--green)'},
-    {label:'Avg Loss',     val: '-'+(s.avg_loss_pct||0)+'%', color:'var(--red)'},
-    {label:'Total Return', val: (s.total_return_pct||0)+'%', color: s.total_return_pct>=0?'var(--green)':'var(--red)'},
-  ];
-  document.getElementById('btSummary').innerHTML = items.map(i =>
-    `<div class="stat-box">
-      <div class="stat-val" style="color:${i.color||'var(--text)'}">${i.val}</div>
-      <div class="stat-label">${i.label}</div>
-    </div>`
-  ).join('');
-
-  const trades = d.trades || [];
-  document.getElementById('btTrades').innerHTML = trades.slice(-30).reverse().map(t =>
-    `<div class="bt-row">
-      <div style="font-family:'DM Mono',monospace;font-weight:700;width:60px">${t.ticker}</div>
-      <div style="flex:1;color:var(--text-muted)">
-        Score ${t.score} · RSI ${fmt(t.rsi||0,0)} · ${t.hold_days}d
-      </div>
-      <div class="result-${t.outcome==='WIN'?'win':'loss'};font-family:'DM Mono',monospace;font-weight:700">
-        ${t.outcome==='WIN'?'+':''}${t.pnl_pct}%
-      </div>
-      <div>
-        <span class="badge ${t.outcome==='WIN'?'badge-buy':'badge-avoid'}">${t.outcome}</span>
-      </div>
-    </div>`
-  ).join('');
-
+  renderResults(d);
   document.getElementById('btResults').style.display = '';
-  toast(`Backtest: ${s.win_rate}% win rate, PF ${s.profit_factor}`);
+  window.scrollTo(0, document.getElementById('btResults').offsetTop - 16);
+}
+
+function renderResults(d) {
+  const s  = d.summary || {};
+  const n  = s.total_trades || 0;
+
+  // Sample size warning
+  document.getElementById('btSmallSample').style.display = (s.insufficient && n > 0) ? '' : 'none';
+
+  // Verdict
+  document.getElementById('btVerdict').innerHTML = d.verdict || '';
+
+  // Core stats — row 1
+  const exp   = s.expectancy_r || 0;
+  const expC  = exp >= 0.2 ? 'var(--green)' : exp > 0 ? 'var(--yellow)' : 'var(--red)';
+  const pfC   = (s.profit_factor||0) >= 1.5 ? 'var(--green)' : (s.profit_factor||0) >= 1.0 ? 'var(--yellow)' : 'var(--red)';
+  const wrC   = (s.win_rate||0) >= 55 ? 'var(--green)' : (s.win_rate||0) >= 45 ? 'var(--yellow)' : 'var(--red)';
+  const pnlC  = (s.total_pnl_dollar||0) >= 0 ? 'var(--green)' : 'var(--red)';
+
+  document.getElementById('btStats').innerHTML = [
+    stat(n, 'Total Trades', ''),
+    stat((s.win_rate||0)+'%', 'Win Rate', wrC),
+    stat(fmt(exp,3)+'R', 'Expectancy/trade', expC),
+    stat(fmt(s.profit_factor,2), 'Profit Factor', pfC),
+    stat('$'+fmtN(s.total_pnl_dollar), 'Total P&L', pnlC),
+  ].join('');
+
+  const ddC = (s.max_drawdown_pct||0) <= 15 ? 'var(--green)' : (s.max_drawdown_pct||0) <= 25 ? 'var(--yellow)' : 'var(--red)';
+  document.getElementById('btStats2').innerHTML = [
+    stat(fmt(s.avg_win_r,2)+'R', 'Avg Win', 'var(--green)'),
+    stat(fmt(s.avg_loss_r,2)+'R', 'Avg Loss', 'var(--red)'),
+    stat((s.max_drawdown_pct||0)+'%', 'Max Drawdown', ddC),
+    stat(s.longest_loss_streak||0, 'Max Loss Streak', (s.longest_loss_streak||0) <= 5 ? '' : 'var(--red)'),
+  ].join('');
+
+  // Equity curve
+  renderCurve(d.equity_curve || [], d.params?.account || 20000);
+
+  // IS/OOS split
+  const splitSection = document.getElementById('btSplitSection');
+  if (d.is_oos) {
+    renderSplit(d.is_oos);
+    splitSection.style.display = '';
+  } else {
+    splitSection.style.display = 'none';
+  }
+
+  // Regime breakdown
+  renderRegime(d.regime || {});
+
+  // Trade log
+  const trades = d.trades || [];
+  document.getElementById('btTradeCount').textContent =
+    `(showing last ${trades.length} of ${d.total_trades} total)`;
+  document.getElementById('btTradeBody').innerHTML = [...trades].reverse().map(t => {
+    const rc = t.r_mult >= 0 ? 'r-pos' : 'r-neg';
+    const rSign = t.r_mult >= 0 ? '+' : '';
+    const regChip = regimeChip(t.regime);
+    return `<tr>
+      <td style="font-family:'DM Mono',monospace;white-space:nowrap;color:var(--text-muted)">${t.entry_date||''}</td>
+      <td style="font-family:'DM Mono',monospace;font-weight:800">${t.ticker}</td>
+      <td>${t.score}</td>
+      <td>${fmt(t.rsi,0)}</td>
+      <td style="font-family:'DM Mono',monospace">$${fmt(t.entry,2)}</td>
+      <td style="font-family:'DM Mono',monospace;color:var(--red)">$${fmt(t.stop,2)}</td>
+      <td style="font-family:'DM Mono',monospace;color:var(--green)">$${fmt(t.target,2)}</td>
+      <td style="font-family:'DM Mono',monospace">$${fmt(t.exit,2)}</td>
+      <td>${t.hold_days}d</td>
+      <td><span class="badge ${t.outcome==='WIN'?'badge-buy':'badge-avoid'}">${t.exit_type||t.outcome}</span></td>
+      <td>${regChip}</td>
+      <td class="${rc}">${rSign}${fmt(t.r_mult,2)}R</td>
+      <td class="${rc}">${t.pnl_dollar>=0?'+':''}$${fmt(t.pnl_dollar,0)}</td>
+    </tr>`;
+  }).join('');
+
+  // Look-ahead notes
+  const laNotes = [
+    ['L1 TREND',       'EMA20/50/200 on closes[0..T] only', true],
+    ['L2 MOMENTUM',    'RSI/MACD/ROC on closes[0..T] only', true],
+    ['L3 VOLUME',      'Day-T volume vs avg of days T-20..T-1', true],
+    ['L4 STRUCTURE',   'Price vs EMA20 at close of day T', true],
+    ['L5 CATALYST',    'Historical news not archived — scored 0. Conservative bias (scores understated vs live).', false],
+    ['L6 SMART MONEY', 'UW API is real-time only — scored 0. Conservative bias.', false],
+    ['ENTRY',          'Simulated at day T+1 OPEN — never at T close', true],
+    ['STOP/TARGET',    'Checked against T+1..T+N daily highs/lows, stop wins on same-bar ties', true],
+    ['REGIME',         'SPY EMA200/50 computed on SPY closes[0..T]', true],
+  ];
+  document.getElementById('btLANotes').innerHTML = laNotes.map(([lbl, note, clean]) =>
+    `<div class="la-item">
+      <span class="${clean ? 'la-clean' : 'la-warn'}">${clean ? '✓' : '⚠'}</span>
+      <strong style="margin:0 6px">${lbl}</strong>
+      <span style="color:var(--text-muted)">${note}</span>
+      <span style="margin-left:6px;font-size:9px;font-weight:700;${clean ? 'color:var(--green)' : 'color:var(--yellow)'}">${clean ? 'CLEAN' : 'CONSERVATIVE BIAS'}</span>
+    </div>`
+  ).join('');
+
+  // Skipped / errors
+  const skip = [...(d.skipped||[]), ...(d.errors||[])];
+  if (skip.length) {
+    document.getElementById('btSkippedContent').innerHTML =
+      '<strong>Skipped / errors:</strong><br>' + skip.join('<br>');
+    document.getElementById('btSkipped').style.display = '';
+  } else {
+    document.getElementById('btSkipped').style.display = 'none';
+  }
+
+  toast(`Backtest done — ${n} trades, ${s.win_rate}% win rate`);
+}
+
+// ── Equity curve SVG ──────────────────────────────────────────────────────────
+function renderCurve(curve, startEquity) {
+  const svg = document.getElementById('equitySvg');
+  svg.innerHTML = '';
+  if (curve.length < 2) {
+    svg.innerHTML = '<text x="400" y="70" fill="#555" text-anchor="middle" font-size="12">No equity data</text>';
+    return;
+  }
+
+  const W = 800, H = 140, PAD = 8;
+  const vals = curve.map(p => p.equity);
+  const minV = Math.min(...vals);
+  const maxV = Math.max(...vals);
+  const range = maxV - minV || 1;
+
+  const pts = vals.map((v, i) => {
+    const x = PAD + (i / (vals.length - 1)) * (W - PAD * 2);
+    const y = H - PAD - ((v - minV) / range) * (H - PAD * 2);
+    return [x, y];
+  });
+
+  // Zero line (start equity)
+  const startY = H - PAD - ((startEquity - minV) / range) * (H - PAD * 2);
+  svg.innerHTML += `<line x1="${PAD}" y1="${startY}" x2="${W-PAD}" y2="${startY}" class="curve-zero"/>`;
+
+  // Area fill
+  const areaD = `M${pts[0][0]},${startY} `
+    + pts.map(p => `L${p[0]},${p[1]}`).join(' ')
+    + ` L${pts[pts.length-1][0]},${startY} Z`;
+  svg.innerHTML += `<path d="${areaD}" class="curve-area"/>`;
+
+  // Line
+  const lineD = 'M' + pts.map(p => `${p[0]},${p[1]}`).join(' L');
+  svg.innerHTML += `<path d="${lineD}" class="curve-line"/>`;
+
+  // Endpoints
+  const last = vals[vals.length - 1];
+  const col  = last >= startEquity ? 'var(--green)' : 'var(--red)';
+  svg.innerHTML += `<circle cx="${pts[pts.length-1][0]}" cy="${pts[pts.length-1][1]}" r="3" fill="${col}"/>`;
+
+  // Labels
+  document.getElementById('curveStart').textContent = curve[0].date + ' · $' + fmtN(startEquity);
+  document.getElementById('curveEnd').textContent   = curve[curve.length-1].date + ' · $' + fmtN(last);
+}
+
+// ── IS/OOS ────────────────────────────────────────────────────────────────────
+function renderSplit(isOos) {
+  const el = document.getElementById('btSplitGrid');
+  el.innerHTML = ['in_sample', 'out_of_sample'].map(key => {
+    const s  = isOos[key] || {};
+    const lbl = key === 'in_sample' ? 'In-Sample (first half)' : 'Out-of-Sample (second half)';
+    const exp = s.expectancy_r || 0;
+    const ec  = exp > 0 ? 'var(--green)' : 'var(--red)';
+    const warn = (key === 'out_of_sample' && exp < 0) ? '<br><span style="color:var(--red);font-size:10px">⚠ OOS negative — potential overfitting</span>' : '';
+    return `<div class="card" style="background:var(--bg3)">
+      <div class="split-header">${lbl}</div>
+      ${s.total_trades == null ? '<div style="color:var(--text-muted);font-size:12px">No data</div>' : `
+      <div class="stats-3">
+        ${stat(s.total_trades||0,'Trades','')}
+        ${stat((s.win_rate||0)+'%','Win %', (s.win_rate||0)>=50?'var(--green)':'var(--red)')}
+        ${stat(fmt(exp,2)+'R','Expect', ec)}
+      </div>
+      <div style="font-size:11px;color:var(--text-muted);margin-top:8px">
+        PF ${fmt(s.profit_factor,2)} · Streak ${s.longest_loss_streak||0}
+      </div>${warn}`}
+    </div>`;
+  }).join('');
+}
+
+// ── Regime breakdown ──────────────────────────────────────────────────────────
+function renderRegime(regime) {
+  const body = document.getElementById('btRegimeBody');
+  const keys = ['RISK_ON', 'RISK_OFF', 'NEUTRAL'];
+  body.innerHTML = keys.map(k => {
+    const r = regime[k];
+    if (!r) return `<tr><td><span class="${k==='RISK_ON'?'chip-on':k==='RISK_OFF'?'chip-off':'chip-neut'}">${k}</span></td><td colspan="5" style="color:var(--text-muted)">No trades</td></tr>`;
+    const exp = r.expectancy_r || 0;
+    const ec  = exp > 0 ? 'var(--green)' : 'var(--red)';
+    const wrC = (r.win_rate||0) >= 50 ? 'var(--green)' : 'var(--red)';
+    return `<tr>
+      <td><span class="${k==='RISK_ON'?'chip-on':k==='RISK_OFF'?'chip-off':'chip-neut'}">${k}</span></td>
+      <td>${r.total_trades}</td>
+      <td style="color:${wrC}">${r.win_rate}%</td>
+      <td style="color:${ec}">${fmt(exp,3)}R</td>
+      <td style="color:${(r.profit_factor||0)>=1?'var(--green)':'var(--red)'}">${fmt(r.profit_factor,2)}</td>
+      <td style="color:${(r.total_pnl_dollar||0)>=0?'var(--green)':'var(--red)'}">$${fmtN(r.total_pnl_dollar)}</td>
+    </tr>`;
+  }).join('');
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function stat(val, label, color) {
+  return `<div class="stat-box stat-sm">
+    <div class="stat-val" style="${color?'color:'+color:''}">${val}</div>
+    <div class="stat-label">${label}</div>
+  </div>`;
+}
+
+function regimeChip(r) {
+  if (r === 'RISK_ON')  return '<span class="chip-on">ON</span>';
+  if (r === 'RISK_OFF') return '<span class="chip-off">OFF</span>';
+  return '<span class="chip-neut">NEUT</span>';
+}
+
+function fmtN(n) {
+  if (n == null) return '—';
+  const abs = Math.abs(n);
+  const sign = n < 0 ? '-' : '';
+  if (abs >= 1000) return sign + (abs/1000).toFixed(1) + 'k';
+  return sign + abs.toFixed(0);
 }
 </script>
 {% endblock %}
