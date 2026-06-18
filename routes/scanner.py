@@ -146,26 +146,34 @@ def _get_analyst_rating(ticker):
 
 def _batch_quick_scan(universe):
     """
-    Download 1y of daily candles for the full universe in two batched yfinance
-    calls (~5-10s total) then compute 4-layer quick scores — no per-ticker loops.
+    Download 1y of daily candles for the full universe in batched yfinance
+    calls then compute 4-layer quick scores.
     """
     import yfinance as yf
+    import concurrent.futures
 
     all_data = {}
-    batch_size = 100
+    batch_size = 50          # smaller batches are less likely to time out
     batches = [universe[i:i + batch_size] for i in range(0, len(universe), batch_size)]
     done_count = 0
 
     for batch in batches:
+        raw = None
         try:
-            raw = yf.download(
-                batch, period="1y",
-                auto_adjust=True, progress=False, threads=True,
-            )
-            if raw.empty:
-                done_count += len(batch)
-                _scan_progress["done"] = done_count
-                continue
+            # 60s hard timeout per batch — yf.download has no built-in timeout
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as ex:
+                future = ex.submit(
+                    yf.download, batch,
+                    period="1y", auto_adjust=True, progress=False, threads=False,
+                )
+                try:
+                    raw = future.result(timeout=60)
+                except concurrent.futures.TimeoutError:
+                    print(f"[SCANNER] Batch timeout ({len(batch)} tickers) — skipping")
+        except Exception as e:
+            print(f"[SCANNER] Batch download error: {e}")
+
+        if raw is not None and not raw.empty:
             multi = len(batch) > 1
             for ticker in batch:
                 try:
@@ -179,8 +187,7 @@ def _batch_quick_scan(universe):
                         all_data[ticker] = {"closes": closes, "volumes": volumes}
                 except Exception:
                     pass
-        except Exception as e:
-            print(f"Batch download error: {e}")
+
         done_count += len(batch)
         _scan_progress["done"] = done_count
 
@@ -255,8 +262,13 @@ def run_scan_job():
             _scan_progress["universe_source"] = f"static fallback ({len(_FALLBACK)} tickers)"
             print(f"[SCANNER] {msg}")
 
+        import concurrent.futures as _cf
         from utils.prices import get_live_price
-        spy_check = get_live_price("SPY")
+        try:
+            spy_check = _cf.ThreadPoolExecutor(max_workers=1).submit(
+                get_live_price, "SPY").result(timeout=15)
+        except Exception:
+            spy_check = {}
         spy_px = spy_check.get("price", 0)
         if spy_px <= 0:
             msg = "CRITICAL: SPY price returned $0 — Yahoo Finance feed may be down"

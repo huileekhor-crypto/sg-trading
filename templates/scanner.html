@@ -394,12 +394,13 @@ function pollProgress() {
     document.getElementById('scanPct').textContent  = pct + '%';
     document.getElementById('scanFill').style.width = pct + '%';
 
-    if (p.status === 'done' || p.status === 'error') {
+    if (p.status === 'done' || p.status === 'error' || p.status === 'idle') {
       clearInterval(pollTimer);
       document.getElementById('scanProgress').style.display = 'none';
       document.getElementById('scanBtn').disabled = false;
       document.getElementById('scanBtn').textContent = '🔄 Scan Now';
       if (p.status === 'done') { loadResults(); toast('Scan complete — ' + p.done + ' results'); }
+      else if (p.status === 'idle') { toast('Scan interrupted — server restarted. Try again.'); loadResults(); }
       else { toast('Scan failed: ' + (p.phase || p.error || 'unknown error')); }
     }
   }, 3000);
