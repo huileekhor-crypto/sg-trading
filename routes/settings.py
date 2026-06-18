@@ -6,6 +6,12 @@ from models.journal import get_settings, update_settings
 settings_bp = Blueprint("settings", __name__)
 
 
+@settings_bp.route("/api/uw/quota")
+def uw_quota_status():
+    from utils.unusual_whales import get_quota_status
+    return jsonify(get_quota_status())
+
+
 @settings_bp.route("/settings")
 def settings_page():
     return render_template("settings.html")

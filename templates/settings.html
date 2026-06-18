@@ -84,6 +84,11 @@
 </div>
 
 <div class="card" style="margin-bottom:16px">
+  <div class="card-title">Unusual Whales Quota</div>
+  <div id="uwQuota" style="font-size:12px;line-height:2;color:var(--text-dim)">Loading...</div>
+</div>
+
+<div class="card" style="margin-bottom:16px">
   <div class="card-title">API Keys Status</div>
   <div id="apiStatus" style="font-size:12px;line-height:2">Loading...</div>
 </div>
@@ -119,6 +124,35 @@ async function loadSettings() {
   document.getElementById('sExtGain').value       = s.ext_gain_pct      || 8.0;
   document.getElementById('sExtIv').value         = s.ext_iv_ceil       || 90;
   document.getElementById('sPriceMismatch').value = s.price_mismatch_pct || 5.0;
+
+  // UW quota panel
+  const q = await api('/api/uw/quota');
+  if (q) {
+    const clr = q.daily_color === 'red'   ? 'var(--red)'
+              : q.daily_color === 'amber' ? '#F59E0B'
+              : 'var(--green)';
+    const daily = q.daily_req_count !== null
+      ? `<b style="color:${clr}">${q.daily_req_count} / ${q.token_req_limit} (${q.daily_pct}% used)</b> · resets 8 PM ET`
+      : '<span style="color:var(--text-muted)">No calls logged yet — data populates after first UW request</span>';
+    const minute = q.minute_req_counter !== null
+      ? `${q.minute_req_counter}/120 used · <b>${q.per_minute_remaining}</b> remaining`
+      : 'No data yet';
+    const total = (q.cache_hits + q.cache_misses) || 1;
+    const hitRate = Math.round(q.cache_hits / total * 100);
+    const shortsTag = q.shorts_disabled
+      ? '<span style="color:var(--red);font-weight:700">DISABLED</span>'
+      : '<span style="color:var(--green)">enabled</span>';
+    document.getElementById('uwQuota').innerHTML = `
+      <div>Daily: ${daily}</div>
+      <div>This minute: ${minute}</div>
+      <div>Cache: ${q.cache_hits} hits / ${q.cache_misses} misses (${hitRate}% hit rate) · <b>${q.cache_disabled}</b> calls skipped (disabled endpoints)</div>
+      <div style="color:var(--text-muted)">Daily soft cap: ${q.soft_cap_pct}% · Shorts endpoint: ${shortsTag}</div>
+      ${q.last_updated ? `<div style="font-size:10px;margin-top:2px">Updated ${new Date(q.last_updated * 1000).toLocaleTimeString()}</div>` : ''}
+    `;
+  } else {
+    document.getElementById('uwQuota').innerHTML =
+      '<span style="color:var(--text-muted)">Quota unavailable (UW_API_KEY not set or no calls made yet)</span>';
+  }
 
   // API key status check
   const r = await fetch('/health');

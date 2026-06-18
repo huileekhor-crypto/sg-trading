@@ -306,6 +306,11 @@ def run_scan_job():
         _scan_progress["done"] = 0
         _scan_progress["total"] = len(candidates)
 
+        from utils.unusual_whales import pre_burst_check
+        throttle = pre_burst_check(n_calls=len(candidates) * 2)
+        if throttle["throttled"]:
+            print(f"[SCANNER] Throttled {throttle['slept']:.0f}s before deep scan")
+
         final_results = []
         for i, cand in enumerate(candidates):
             ticker = cand["ticker"]
@@ -398,3 +403,5 @@ def run_scan_job():
         print(f"Scan job error: {e}")
     finally:
         _scan_running = False
+        from utils.unusual_whales import set_scanner_priority
+        set_scanner_priority(False)

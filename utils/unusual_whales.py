@@ -2,17 +2,72 @@
 
 import os
 import time
+import threading
 import requests
 
 UW_KEY = os.environ.get("UW_API_KEY", "")
 BASE = "https://api.unusualwhales.com"
 
-_cache = {}
-CACHE_TTL = 300  # 5 min
+# ─── Config — single source of truth for TTLs, enabled endpoints, limits ──────
+
+UW_CONFIG = {
+    # Per-endpoint cache TTLs (seconds). Keys match endpoint_name passed to _get().
+    "ENDPOINT_TTLS": {
+        # Fast-moving / time-sensitive
+        "flow_alerts":          300,    # 5min
+        "ticker_flow":          300,
+        "gex":                  300,
+        "market_tide":          300,
+        "sector_etfs":          300,
+        "movers":               120,    # 2min
+        "news_headlines":       120,
+        # Medium — dark pool prints settle within 30min
+        "darkpool":             1800,   # 30min
+        # Moderate — screener, analyst ratings, earnings lists
+        "screener":             900,    # 15min
+        "breakout_screener":    900,
+        "analysts":             3600,   # 1h
+        "earnings_premarket":   3600,
+        "earnings_afterhours":  3600,
+        "ticker_earnings":      3600,
+        # Slow — insider filings, congress trades, seasonality, estimates
+        "insider":              21600,  # 6h
+        "insider_summary":      21600,
+        "congress":             21600,
+        "congress_unusual":     21600,
+        "earnings_estimates":   86400,  # 24h
+        "seasonality":          86400,
+        "shorts":               86400,  # 24h (disabled anyway; TTL retained for re-enable)
+        "default":              300,
+    },
+    # Set False to skip endpoint and log "skipped (disabled)".
+    # Re-enable by flipping to True — one flag per endpoint.
+    "ENABLED_ENDPOINTS": {
+        "shorts": False,   # returns nothing on current plan; saves ~850 calls/month
+    },
+    "DAILY_SOFT_CAP_PCT":    0.90,  # stop non-essential calls at 90% of daily limit
+    "MIN_PER_MIN_REMAINING": 5,     # sleep-until-reset if fewer than this remain
+    "MAX_RETRIES_429":       3,     # exponential backoff retries on 429
+}
+
+# ─── Runtime quota state (populated from response headers) ────────────────────
+
+_quota_lock = threading.Lock()
+_quota: dict = {
+    "daily_req_count":       None,
+    "token_req_limit":       None,
+    "minute_req_counter":    None,
+    "per_minute_remaining":  None,
+    "per_minute_reset":      None,
+    "last_updated":          None,
+}
+_cache_stats: dict = {"hits": 0, "misses": 0, "disabled": 0, "soft_cap": 0}
+_scanner_priority: bool = False  # True while scanner deep-scan runs; bypasses soft cap
+
+_cache: dict = {}
 
 
 def _headers():
-    # Re-read at call time so hot env reloads work
     key = os.environ.get("UW_API_KEY", UW_KEY)
     return {
         "Authorization": f"Bearer {key}",
@@ -20,74 +75,244 @@ def _headers():
     }
 
 
-def _get(endpoint, params=None, ttl=CACHE_TTL):
-    key = f"{endpoint}:{str(params)}"
+def _check_enabled(endpoint_name: str) -> bool:
+    enabled = UW_CONFIG["ENABLED_ENDPOINTS"].get(endpoint_name, True)
+    if not enabled:
+        print(f"[UW] skipped (disabled): {endpoint_name}")
+        with _quota_lock:
+            _cache_stats["disabled"] += 1
+    return enabled
+
+
+def _read_quota_headers(headers) -> None:
+    """Extract UW quota headers and store in _quota."""
+    mapping = {
+        "x-uw-daily-req-count":          "daily_req_count",
+        "x-uw-token-req-limit":          "token_req_limit",
+        "x-uw-minute-req-counter":       "minute_req_counter",
+        "x-uw-req-per-minute-remaining": "per_minute_remaining",
+        "x-uw-req-per-minute-reset":     "per_minute_reset",
+    }
+    updates = {}
+    for hdr, key in mapping.items():
+        val = headers.get(hdr)
+        if val is not None:
+            try:
+                updates[key] = int(val)
+            except (ValueError, TypeError):
+                updates[key] = val
+    if updates:
+        updates["last_updated"] = time.time()
+        with _quota_lock:
+            _quota.update(updates)
+
+
+def _get(endpoint, params=None, ttl=None, endpoint_name=None):
+    # Resolve TTL from config
+    if ttl is None:
+        name = endpoint_name or "default"
+        ttl = UW_CONFIG["ENDPOINT_TTLS"].get(name, UW_CONFIG["ENDPOINT_TTLS"]["default"])
+
+    # Disabled endpoint check
+    if endpoint_name and not _check_enabled(endpoint_name):
+        return None
+
+    # Cache hit
+    cache_key = f"{endpoint}:{str(params)}"
     now = time.time()
-    if key in _cache and now - _cache[key]["ts"] < ttl:
-        return _cache[key]["data"]
+    cached = _cache.get(cache_key)
+    if cached and now - cached["ts"] < ttl:
+        with _quota_lock:
+            _cache_stats["hits"] += 1
+        return cached["data"]
+
     uw_key = os.environ.get("UW_API_KEY", UW_KEY)
     if not uw_key:
         return None
-    try:
-        r = requests.get(f"{BASE}{endpoint}", params=params,
-                         headers=_headers(), timeout=10)
-        if not r.ok:
-            return None
-        data = r.json()
-        _cache[key] = {"data": data, "ts": now}
-        return data
-    except Exception:
-        return None
+
+    # Daily soft cap — scanner bypasses, manual Analyse tab stops at 90%
+    if not _scanner_priority:
+        with _quota_lock:
+            d_count = _quota.get("daily_req_count")
+            d_limit = _quota.get("token_req_limit")
+        if (d_count and d_limit and d_limit > 0
+                and d_count / d_limit >= UW_CONFIG["DAILY_SOFT_CAP_PCT"]):
+            print(f"[UW] Soft cap {UW_CONFIG['DAILY_SOFT_CAP_PCT'] * 100:.0f}% reached "
+                  f"({d_count}/{d_limit}) — skipping {endpoint_name or endpoint}")
+            with _quota_lock:
+                _cache_stats["soft_cap"] += 1
+            return cached["data"] if cached else None  # serve stale if available
+
+    # Per-minute throttle: sleep until reset if headroom is critically low
+    with _quota_lock:
+        remaining = _quota.get("per_minute_remaining")
+        reset_val  = _quota.get("per_minute_reset")
+    if remaining is not None and remaining <= UW_CONFIG["MIN_PER_MIN_REMAINING"]:
+        sleep_secs = 65
+        if reset_val is not None:
+            try:
+                rt = int(reset_val)
+                sleep_secs = (rt + 1) if rt <= 120 else max(0, rt - time.time()) + 1
+            except Exception:
+                pass
+        sleep_secs = min(max(sleep_secs, 1), 65)
+        print(f"[UW] Per-minute throttle ({remaining} remaining) — sleeping {sleep_secs:.0f}s")
+        time.sleep(sleep_secs)
+
+    with _quota_lock:
+        _cache_stats["misses"] += 1
+
+    # Request with 429 exponential backoff
+    for attempt in range(UW_CONFIG["MAX_RETRIES_429"] + 1):
+        try:
+            r = requests.get(f"{BASE}{endpoint}", params=params,
+                             headers=_headers(), timeout=10)
+            _read_quota_headers(r.headers)
+
+            if r.status_code == 429:
+                wait = min(2 ** attempt * 5, 30)
+                print(f"[UW] 429 on {endpoint} — backoff {wait}s "
+                      f"(attempt {attempt + 1}/{UW_CONFIG['MAX_RETRIES_429']})")
+                if attempt < UW_CONFIG["MAX_RETRIES_429"]:
+                    time.sleep(wait)
+                    continue
+                return None
+
+            if not r.ok:
+                return None
+
+            data = r.json()
+            _cache[cache_key] = {"data": data, "ts": now}
+            return data
+
+        except Exception as e:
+            print(f"[UW] Error fetching {endpoint}: {e}")
+            if attempt < UW_CONFIG["MAX_RETRIES_429"]:
+                time.sleep(2 ** attempt)
+
+    return None
+
+
+# ─── Quota / rate-limit management ───────────────────────────────────────────
+
+def get_quota_status() -> dict:
+    """Return current quota state for Settings dashboard panel."""
+    with _quota_lock:
+        q     = dict(_quota)
+        stats = dict(_cache_stats)
+
+    d_count     = q.get("daily_req_count")
+    d_limit     = q.get("token_req_limit")
+    daily_pct   = None
+    daily_color = "green"
+    if d_count is not None and d_limit and d_limit > 0:
+        daily_pct   = round(d_count / d_limit * 100, 1)
+        daily_color = ("red" if daily_pct > 90 else
+                       "amber" if daily_pct > 70 else "green")
+
+    return {
+        "daily_req_count":      d_count,
+        "token_req_limit":      d_limit,
+        "daily_pct":            daily_pct,
+        "daily_color":          daily_color,
+        "minute_req_counter":   q.get("minute_req_counter"),
+        "per_minute_remaining": q.get("per_minute_remaining"),
+        "per_minute_reset":     q.get("per_minute_reset"),
+        "last_updated":         q.get("last_updated"),
+        "soft_cap_pct":         int(UW_CONFIG["DAILY_SOFT_CAP_PCT"] * 100),
+        "shorts_disabled":      not UW_CONFIG["ENABLED_ENDPOINTS"].get("shorts", True),
+        "cache_hits":           stats["hits"],
+        "cache_misses":         stats["misses"],
+        "cache_disabled":       stats["disabled"],
+        "soft_cap_skipped":     stats["soft_cap"],
+    }
+
+
+def set_scanner_priority(active: bool) -> None:
+    """Set True before scanner deep-scan, False after. Bypasses daily soft cap."""
+    global _scanner_priority
+    _scanner_priority = active
+
+
+def pre_burst_check(n_calls: int = 30) -> dict:
+    """
+    Call before a burst of UW requests (scanner deep-scan).
+    Sleeps until per-minute quota resets if headroom < n_calls.
+    Sets scanner priority mode so the burst bypasses the daily soft cap.
+    """
+    set_scanner_priority(True)
+    with _quota_lock:
+        remaining = _quota.get("per_minute_remaining")
+        reset_val  = _quota.get("per_minute_reset")
+    if remaining is not None and remaining < n_calls:
+        sleep_secs = 65
+        if reset_val is not None:
+            try:
+                rt = int(reset_val)
+                sleep_secs = (rt + 1) if rt <= 120 else max(0, rt - time.time()) + 1
+            except Exception:
+                pass
+        sleep_secs = min(max(sleep_secs, 1), 65)
+        print(f"[UW] Pre-scan throttle: {remaining} remaining in current minute "
+              f"— sleeping {sleep_secs:.0f}s")
+        time.sleep(sleep_secs)
+        return {"throttled": True, "slept": sleep_secs}
+    return {"throttled": False, "slept": 0}
 
 
 # ─── Public fetch functions ───────────────────────────────────────────────────
 
 def uw_flow_alerts(ticker):
     """Global flow alerts filtered by ticker."""
-    return _get("/api/option-trades/flow-alerts", {"ticker": ticker, "limit": 25})
+    return _get("/api/option-trades/flow-alerts",
+                {"ticker": ticker, "limit": 25}, endpoint_name="flow_alerts")
 
 
 def uw_ticker_flow(ticker):
     """Ticker-specific flow alerts."""
-    return _get(f"/api/stock/{ticker}/flow-alerts", {"limit": 25})
+    return _get(f"/api/stock/{ticker}/flow-alerts",
+                {"limit": 25}, endpoint_name="ticker_flow")
 
 
 def uw_darkpool(ticker):
     """Dark pool prints for ticker."""
-    result = _get(f"/api/darkpool/{ticker}", {"limit": 15})
+    result = _get(f"/api/darkpool/{ticker}", {"limit": 15}, endpoint_name="darkpool")
     if result is None:
-        result = _get("/api/darkpool/recent", {"ticker": ticker, "limit": 15})
+        result = _get("/api/darkpool/recent", {"ticker": ticker, "limit": 15},
+                      endpoint_name="darkpool")
     return result
 
 
 def uw_insider(ticker):
     """Insider transactions."""
-    return _get(f"/api/insider/{ticker}", {"limit": 15})
+    return _get(f"/api/insider/{ticker}", {"limit": 15}, endpoint_name="insider")
 
 
 def uw_insider_summary(ticker):
     """Insider buy/sell summary."""
-    return _get(f"/api/stock/{ticker}/insider-buy-sells")
+    return _get(f"/api/stock/{ticker}/insider-buy-sells", endpoint_name="insider_summary")
 
 
 def uw_congress(ticker):
     """Congress recent trades for ticker."""
-    return _get("/api/congress/recent-trades", {"ticker": ticker, "limit": 10})
+    return _get("/api/congress/recent-trades",
+                {"ticker": ticker, "limit": 10}, endpoint_name="congress")
 
 
 def uw_congress_unusual(ticker):
     """Unusual congress activity."""
-    return _get("/api/congress/unusual-trades", {"ticker": ticker, "limit": 5})
+    return _get("/api/congress/unusual-trades",
+                {"ticker": ticker, "limit": 5}, endpoint_name="congress_unusual")
 
 
 def uw_shorts(ticker):
     """Short interest data."""
-    return _get(f"/api/shorts/{ticker}/data")
+    return _get(f"/api/shorts/{ticker}/data", endpoint_name="shorts")
 
 
 def uw_screener(params=None):
     """Stock screener — quality momentum names."""
-    return _get("/api/screener/stocks", params or {}, ttl=900)
+    return _get("/api/screener/stocks", params or {}, endpoint_name="screener")
 
 
 _BREAKOUT_PRESETS = {
@@ -160,47 +385,48 @@ def uw_breakout_screener(preset='balanced'):
 
 def uw_analysts(ticker):
     """Analyst ratings."""
-    return _get("/api/screener/analysts", {"ticker": ticker})
+    return _get("/api/screener/analysts", {"ticker": ticker}, endpoint_name="analysts")
 
 
 def uw_movers():
     """Top market movers."""
-    return _get("/api/market/movers", ttl=120)
+    return _get("/api/market/movers", endpoint_name="movers")
 
 
 def uw_market_tide():
     """Overall market sentiment/tide."""
-    return _get("/api/market/market-tide", ttl=300)
+    return _get("/api/market/market-tide", endpoint_name="market_tide")
 
 
 def uw_earnings_premarket():
     """Today's premarket earnings."""
-    return _get("/api/earnings/premarket", ttl=3600)
+    return _get("/api/earnings/premarket", endpoint_name="earnings_premarket")
 
 
 def uw_earnings_afterhours():
     """Today's afterhours earnings."""
-    return _get("/api/earnings/afterhours", ttl=3600)
+    return _get("/api/earnings/afterhours", endpoint_name="earnings_afterhours")
 
 
 def uw_earnings_estimates(ticker):
     """Earnings estimates for ticker."""
-    return _get(f"/api/companies/{ticker}/earnings-estimates")
+    return _get(f"/api/companies/{ticker}/earnings-estimates",
+                endpoint_name="earnings_estimates")
 
 
 def uw_ticker_earnings(ticker):
-    """Full earnings history + upcoming for ticker — /api/stock/{ticker}/earnings."""
-    return _get(f"/api/stock/{ticker}/earnings", ttl=3600)
+    """Full earnings history + upcoming for ticker."""
+    return _get(f"/api/stock/{ticker}/earnings", endpoint_name="ticker_earnings")
 
 
 def uw_gex(ticker):
-    """Greek exposure by expiry date — /api/stock/{ticker}/greek-exposure."""
-    return _get(f"/api/stock/{ticker}/greek-exposure", ttl=300)
+    """Greek exposure by expiry date."""
+    return _get(f"/api/stock/{ticker}/greek-exposure", endpoint_name="gex")
 
 
 def uw_sector_etfs():
     """All 11 SPDR sector ETFs with options flow and money-flow data."""
-    return _get("/api/market/sector-etfs", ttl=300)
+    return _get("/api/market/sector-etfs", endpoint_name="sector_etfs")
 
 
 def get_sector_flow():
@@ -212,7 +438,6 @@ def get_sector_flow():
     if not data:
         return []
 
-    # ETF → readable sector name map (override UW's full_name where needed)
     etf_names = {
         "XLK": "Technology", "XLF": "Financials", "XLV": "Healthcare",
         "XLE": "Energy", "XLI": "Industrials", "XLB": "Materials",
@@ -237,7 +462,6 @@ def get_sector_flow():
         cp_ratio = round(call_vol / put_vol, 2) if put_vol else 0
         call_vs30 = round(call_vol / avg30_call, 2) if avg30_call else 1.0
 
-        # 5-day ETF share flow (positive = money flowing in)
         raw_flow = item.get("in_out_flow", [])
         if isinstance(raw_flow, list):
             etf_flow_5d = sum(
@@ -247,7 +471,6 @@ def get_sector_flow():
         else:
             etf_flow_5d = 0
 
-        # Sentiment
         if call_pct >= 55 or (call_pct >= 50 and etf_flow_5d > 0):
             sentiment = "BULLISH"
         elif call_pct <= 45 or (call_pct < 50 and etf_flow_5d < 0):
@@ -255,7 +478,6 @@ def get_sector_flow():
         else:
             sentiment = "NEUTRAL"
 
-        # Price performance vs prev close
         last = _sf(item.get("last", 0))
         prev_close = _sf(item.get("prev_close", 0))
         chg_pct = round((last - prev_close) / prev_close * 100, 2) if prev_close else 0.0
@@ -264,7 +486,7 @@ def get_sector_flow():
             "ticker": ticker,
             "name": etf_names.get(ticker, item.get("full_name", ticker)),
             "last": last,
-            "chg_pct": chg_pct,         # price % change today
+            "chg_pct": chg_pct,
             "call_pct": call_pct,
             "cp_ratio": cp_ratio,
             "call_vs30": call_vs30,
@@ -301,7 +523,6 @@ def get_top_flow(limit=15):
         ticker = str(item.get("ticker", "")).upper()
         if not ticker or ticker in _FLOW_EXCLUDE:
             continue
-        # Skip obvious index names (numeric-heavy)
         if any(c.isdigit() for c in ticker):
             continue
 
@@ -316,7 +537,6 @@ def get_top_flow(limit=15):
                                   item.get("avg30_call_volume", 1)))
         call_vs30 = round(call_vol / avg30_call, 2) if avg30_call else 1.0
 
-        # Aggressive call buying (at the ask)
         call_ask = _sf(item.get("call_volume_ask_side", 0))
         ask_pct = round(call_ask / call_vol * 100, 1) if call_vol else 0.0
 
@@ -324,7 +544,6 @@ def get_top_flow(limit=15):
         iv_rank = round(_sf(item.get("iv_rank", 0)), 1)
         sector = item.get("sector", "") or ""
 
-        # Flow score: unusual call activity weighted by bullish premium direction
         flow_score = round(call_vs30 * (bull_pct / 50), 2)
 
         if bull_pct >= 57 and pcr <= 0.45:
@@ -359,12 +578,12 @@ def get_top_flow(limit=15):
 
 def uw_seasonality(ticker):
     """Monthly seasonality for ticker."""
-    return _get(f"/api/seasonality/{ticker}/monthly", ttl=86400)
+    return _get(f"/api/seasonality/{ticker}/monthly", endpoint_name="seasonality")
 
 
 def uw_news_headlines():
     """Live news headlines."""
-    return _get("/api/news/headlines", ttl=120)
+    return _get("/api/news/headlines", endpoint_name="news_headlines")
 
 
 # ─── GEX helper ──────────────────────────────────────────────────────────────
@@ -384,20 +603,16 @@ def _compute_gex(ticker):
     if not rows:
         return {"available": False, "text": "no data returned"}
 
-    # Aggregate net GEX across all expiries
     net_gex = sum(_sf(r.get("call_gamma", 0)) + _sf(r.get("put_gamma", 0)) for r in rows)
 
-    # Largest single-expiry wall (most gamma concentration)
     def _row_net(r):
         return abs(_sf(r.get("call_gamma", 0)) + _sf(r.get("put_gamma", 0)))
     wall_row = max(rows, key=_row_net)
     wall_date = wall_row.get("date", "")
     wall_net = _sf(wall_row.get("call_gamma", 0)) + _sf(wall_row.get("put_gamma", 0))
 
-    # Net delta (dealer directional exposure)
     net_delta = sum(_sf(r.get("call_delta", 0)) + _sf(r.get("put_delta", 0)) for r in rows)
 
-    # Interpretation
     if net_gex > 0:
         regime = "POSITIVE"
         meaning = "dealers are long gamma — expect mean-reversion, moves get faded"
@@ -444,7 +659,6 @@ def smart_money_score(ticker):
     signals = []
     raw = {}
 
-    # Evidence block — all raw data for display, no fabrication
     evidence = {
         "flow": [],
         "darkpool": [],
@@ -465,7 +679,6 @@ def smart_money_score(ticker):
             strike = str(item.get("strike", item.get("strike_price", "?")))
             expiry = item.get("expiry", item.get("expiration_date", ""))
 
-            # ASK vs BID — prefer direct fields, fallback to execution_estimate
             ask_prem = _sf(item.get("total_ask_side_prem", 0))
             bid_prem = _sf(item.get("total_bid_side_prem", 0))
             if ask_prem or bid_prem:
@@ -480,7 +693,6 @@ def smart_money_score(ticker):
             sentiment = str(item.get("sentiment", "")).lower()
             is_bullish = "bullish" in sentiment or "bull" in sentiment or is_call
 
-            # Opening vs closing
             all_opening = bool(item.get("all_opening_trades", False))
             vol_oi = _sf(item.get("volume_oi_ratio", 0))
             is_opening = all_opening or vol_oi > 1.0
@@ -488,7 +700,6 @@ def smart_money_score(ticker):
             alert_rule = item.get("alert_rule", "")
             trade_count = item.get("trade_count", 0) or item.get("trades", 0)
 
-            # Evidence item — every trade regardless of size threshold
             evidence["flow"].append({
                 "direction": "BULLISH" if (is_call or (is_bullish and not is_put)) else "BEARISH",
                 "type": put_call or "unknown",
@@ -503,7 +714,6 @@ def smart_money_score(ticker):
                 "trade_count": trade_count,
             })
 
-            # Scoring: large bullish flow only (unchanged)
             if (is_call or is_bullish) and premium >= 500_000:
                 bullish_sweeps.append({"premium": premium, "strike": strike,
                                        "expiry": expiry, "at_ask": at_ask})
@@ -674,7 +884,6 @@ def get_market_regime():
     net_gamma = _sf(data.get("net_gamma", 0))
     sentiment = str(data.get("sentiment", data.get("market_sentiment", ""))).lower()
 
-    # Determine regime
     if "bullish" in sentiment or bull_score > bear_score * 1.3 or net_gamma > 0:
         regime = "BULLISH"
         summary = "Market tide is bullish — options flow favors upside"
@@ -705,14 +914,12 @@ def get_earnings_warning(ticker):
     """Check if earnings within 14 days — returns warning string or None."""
     import datetime
     today = datetime.date.today()
-    window = 14  # warn 14 days in advance
+    window = 14
 
-    # Primary: per-ticker earnings calendar (has future dates)
     data = uw_ticker_earnings(ticker)
     if data:
         items = data.get("data", data if isinstance(data, list) else [])
         for item in items:
-            # Only upcoming (unreported) earnings
             if item.get("reported_eps") is not None:
                 continue
             date_str = item.get("report_date", "")
@@ -739,7 +946,6 @@ def get_earnings_warning(ticker):
             except Exception:
                 pass
 
-    # Fallback: today's premarket / afterhours lists
     for fetch_fn in [uw_earnings_premarket, uw_earnings_afterhours]:
         data = fetch_fn()
         if not data:
@@ -771,7 +977,8 @@ def get_seasonality_note(ticker):
         return None
     items = data.get("data", data if isinstance(data, list) else [])
     current_month = datetime.date.today().month
-    month_names = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+    month_names = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
+                   "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
     for item in items:
         m = item.get("month", item.get("month_number", 0))
         try:
@@ -783,12 +990,11 @@ def get_seasonality_note(ticker):
             win_pct = _sf(item.get("win_rate", item.get("positive_rate", 0)))
             month_name = month_names[current_month - 1]
             if avg_ret > 0.01:
-                return f"{ticker} historically +{avg_ret * 100:.1f}% in {month_name} ({win_pct * 100:.0f}% win rate)"
+                return (f"{ticker} historically +{avg_ret * 100:.1f}% in {month_name} "
+                        f"({win_pct * 100:.0f}% win rate)")
             elif avg_ret < -0.01:
-                return (
-                    f"{ticker} historically {avg_ret * 100:.1f}% in {month_name} "
-                    f"({win_pct * 100:.0f}% win rate) — seasonally weak"
-                )
+                return (f"{ticker} historically {avg_ret * 100:.1f}% in {month_name} "
+                        f"({win_pct * 100:.0f}% win rate) — seasonally weak")
     return None
 
 
