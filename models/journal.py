@@ -2,6 +2,7 @@
 
 import sqlite3
 import os
+import json
 from datetime import datetime
 
 DB_PATH = os.path.join(os.path.dirname(__file__), '..', 'trading.db')
@@ -193,13 +194,13 @@ def save_scan_results(results):
             ticker, r.get("score"), r.get("verdict"),
             r.get("mode_tag"), r.get("price"), r.get("rsi"),
             r.get("ema20"), r.get("stop"), r.get("target"),
-            r.get("shares"), str(r.get("uw_notes", [])), today,
+            r.get("shares"), json.dumps(r.get("uw_notes", [])), today,
             now_utc,
             first_seen_map.get(ticker, now_utc),
             r.get("price"),
             r.get("uw_score", 0),
-            str(r.get("analyst") or ""),
-            str(r.get("layers", {})),
+            json.dumps(r.get("analyst") or None),
+            json.dumps(r.get("layers", {})),
             1 if r.get("uw_screener") else 0,
             r.get("priority", "NORMAL"),
         ))
