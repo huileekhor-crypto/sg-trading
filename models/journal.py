@@ -214,6 +214,13 @@ def get_latest_scan():
         'SELECT * FROM scan_results WHERE scan_date = ? ORDER BY score DESC',
         (today,)
     ).fetchall()
+    if not rows:
+        # Today's scan hasn't run yet — fall back to the most recent available date
+        rows = conn.execute(
+            '''SELECT * FROM scan_results WHERE scan_date = (
+                   SELECT MAX(scan_date) FROM scan_results
+               ) ORDER BY score DESC'''
+        ).fetchall()
     conn.close()
     return [dict(r) for r in rows]
 
