@@ -31,8 +31,37 @@ def scan_results():
         "swing": swing,
         "long_term": lt,
         "scan_date": rows[0]["scan_date"] if rows else None,
+        "generated_at": rows[0].get("generated_at") if rows else None,
         "count": len(rows),
     })
+
+
+@scanner_bp.route("/api/scan/freshness")
+def freshness_prices():
+    """Current prices for per-candidate freshness drift check."""
+    import yfinance as yf
+    from flask import request
+    tickers = [t.strip().upper()
+               for t in request.args.get("tickers", "").split(",")
+               if t.strip()][:30]
+    prices = {t: None for t in tickers}
+    if tickers:
+        try:
+            raw = yf.download(tickers, period="2d", auto_adjust=True,
+                              progress=False, threads=True)
+            if not raw.empty:
+                close = raw["Close"]
+                if len(tickers) == 1:
+                    prices[tickers[0]] = round(float(close.dropna().iloc[-1]), 2)
+                else:
+                    for t in tickers:
+                        try:
+                            prices[t] = round(float(close[t].dropna().iloc[-1]), 2)
+                        except Exception:
+                            pass
+        except Exception:
+            pass
+    return jsonify({"prices": prices})
 
 
 @scanner_bp.route("/api/scan/progress")

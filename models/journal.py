@@ -84,7 +84,7 @@ def init_journal_db():
         INSERT OR IGNORE INTO settings (id, account_size, weekly_target, swing_risk, lt_position)
         VALUES (1, 20000, 1500, 2.0, 7.5)
     ''')
-    # Migrate: add scanner columns if they don't exist yet
+    # Migrate: add columns if they don't exist yet
     for stmt in [
         "ALTER TABLE settings ADD COLUMN scan_rvol_min      REAL DEFAULT 1.5",
         "ALTER TABLE settings ADD COLUMN universe_mode      TEXT DEFAULT 'full'",
@@ -95,6 +95,15 @@ def init_journal_db():
         "ALTER TABLE settings ADD COLUMN ext_iv_ceil        REAL DEFAULT 90",
         # Price consistency check (Fix 4)
         "ALTER TABLE settings ADD COLUMN price_mismatch_pct REAL DEFAULT 5.0",
+        # Freshness tracking
+        "ALTER TABLE scan_results ADD COLUMN generated_at    TEXT",
+        "ALTER TABLE scan_results ADD COLUMN first_seen      TEXT",
+        "ALTER TABLE scan_results ADD COLUMN entry_ref_price REAL",
+        "ALTER TABLE scan_results ADD COLUMN uw_score        INTEGER DEFAULT 0",
+        "ALTER TABLE scan_results ADD COLUMN analyst         TEXT",
+        "ALTER TABLE scan_results ADD COLUMN layers          TEXT",
+        "ALTER TABLE scan_results ADD COLUMN uw_screener     INTEGER DEFAULT 0",
+        "ALTER TABLE scan_results ADD COLUMN priority        TEXT DEFAULT 'NORMAL'",
     ]:
         try:
             conn.execute(stmt)
@@ -161,18 +170,38 @@ def update_settings(data):
 def save_scan_results(results):
     conn = get_db()
     today = datetime.now().strftime("%Y-%m-%d")
+    now_utc = datetime.utcnow().isoformat() + 'Z'
+
+    # Snapshot earliest first_seen per ticker before deleting today's rows
+    rows = conn.execute(
+        "SELECT ticker, MIN(first_seen) AS earliest FROM scan_results "
+        "WHERE first_seen IS NOT NULL GROUP BY ticker"
+    ).fetchall()
+    first_seen_map = {row["ticker"]: row["earliest"] for row in rows}
+
     conn.execute("DELETE FROM scan_results WHERE scan_date = ?", (today,))
     for r in results:
+        ticker = r.get("ticker")
         conn.execute('''
             INSERT INTO scan_results
               (ticker, score, verdict, mode_tag, price, rsi, ema20,
-               stop, target, shares, uw_notes, scan_date)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+               stop, target, shares, uw_notes, scan_date,
+               generated_at, first_seen, entry_ref_price,
+               uw_score, analyst, layers, uw_screener, priority)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         ''', (
-            r.get("ticker"), r.get("score"), r.get("verdict"),
+            ticker, r.get("score"), r.get("verdict"),
             r.get("mode_tag"), r.get("price"), r.get("rsi"),
             r.get("ema20"), r.get("stop"), r.get("target"),
-            r.get("shares"), str(r.get("uw_notes", [])), today
+            r.get("shares"), str(r.get("uw_notes", [])), today,
+            now_utc,
+            first_seen_map.get(ticker, now_utc),
+            r.get("price"),
+            r.get("uw_score", 0),
+            str(r.get("analyst") or ""),
+            str(r.get("layers", {})),
+            1 if r.get("uw_screener") else 0,
+            r.get("priority", "NORMAL"),
         ))
     conn.commit()
     conn.close()

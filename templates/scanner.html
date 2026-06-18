@@ -82,6 +82,22 @@
 .flow-bar-wrap { flex:1; background:var(--bg4); border-radius:3px; height:6px; overflow:hidden; }
 .flow-bar-fill { height:100%; border-radius:3px; }
 .flow-meta { font-size:10px; color:var(--text-muted); white-space:nowrap; }
+
+/* Freshness states */
+.freshness-badge {
+  font-size:9px; font-weight:700; padding:2px 5px; border-radius:3px;
+  font-family:'DM Mono',monospace; letter-spacing:.04em; white-space:nowrap;
+}
+.fresh-fresh   { background:rgba(34,197,94,.12);  color:#22C55E; }
+.fresh-aging   { background:rgba(234,179,8,.12);   color:#EAB308; }
+.fresh-stale   { background:rgba(239,68,68,.12);   color:#EF4444; }
+.fresh-unknown { background:var(--bg4);             color:var(--text-muted); }
+.stale-card    { opacity:.6; }
+.stale-banner  {
+  font-size:10px; font-weight:700; color:#EF4444;
+  background:rgba(239,68,68,.08); border-radius:4px;
+  padding:2px 7px; margin-top:5px; display:inline-block;
+}
 </style>
 {% endblock %}
 
@@ -163,22 +179,98 @@
 
 {% block extra_js %}
 <script>
-let pollTimer = null;
+// ── Freshness thresholds (edit here to reconfigure) ───────────────────────
+const FRESHNESS = {
+  freshMins : 30,   // age ≤ this AND price OK → FRESH
+  staleMins : 120,  // age > this → STALE regardless of price
+  freshPct  : 1.0,  // price within 1% of ref → OK for FRESH
+  agingPct  : 3.0,  // price drifted > 3% → STALE
+};
+
+function getFreshnessState(firstSeen, generatedAt, currentPrice, refPrice) {
+  const toDate = s => s ? new Date(s.endsWith('Z') ? s : s + 'Z') : null;
+  const ts = toDate(firstSeen) || toDate(generatedAt);
+  const ageMins = ts ? Math.round((Date.now() - ts) / 60000) : null;
+
+  const priceKnown = currentPrice !== null && currentPrice !== undefined;
+  let priceDriftPct = null;
+  if (priceKnown && refPrice && refPrice > 0)
+    priceDriftPct = Math.abs((currentPrice - refPrice) / refPrice * 100);
+
+  const ageLabel = ageMins === null ? null
+    : ageMins < 60 ? `${ageMins}m`
+    : `${Math.floor(ageMins / 60)}h${ageMins % 60 ? ' ' + ageMins % 60 + 'm' : ''}`;
+
+  let state;
+  if      (ageMins !== null && ageMins > FRESHNESS.staleMins)        state = 'STALE';
+  else if (priceKnown && priceDriftPct > FRESHNESS.agingPct)         state = 'STALE';
+  else if (ageMins !== null && ageMins > FRESHNESS.freshMins)        state = 'AGING';
+  else if (priceKnown && priceDriftPct > FRESHNESS.freshPct)         state = 'AGING';
+  else if (!priceKnown)                                               state = 'UNKNOWN';
+  else                                                                state = 'FRESH';
+
+  return { state, label: ageLabel || '?', priceDrift: priceDriftPct };
+}
+
+function renderFreshnessBadge(freshness) {
+  const cls  = {FRESH:'fresh-fresh',AGING:'fresh-aging',STALE:'fresh-stale',UNKNOWN:'fresh-unknown'}[freshness.state] || 'fresh-unknown';
+  const icon = {FRESH:'●',AGING:'◐',STALE:'○',UNKNOWN:'?'}[freshness.state] || '?';
+  const drift = freshness.priceDrift !== null ? ` · ${freshness.priceDrift.toFixed(1)}% drift` : '';
+  const lbl  = freshness.label ? `${freshness.label} ` : '';
+  return `<span class="freshness-badge ${cls}" title="${freshness.state}${drift}">${lbl}${icon} ${freshness.state}</span>`;
+}
+
+// ── State ─────────────────────────────────────────────────────────────────
+let pollTimer   = null;
+let _scanData   = null;
+let _prices     = {};
+let _freshTimer = null;
+
+function updateScanHeader(generatedAt, scanDate) {
+  const el = document.getElementById('scanDate');
+  if (generatedAt) {
+    const t   = new Date(generatedAt.endsWith('Z') ? generatedAt : generatedAt + 'Z');
+    const sgt = new Date(t.getTime() + 8 * 3600000);
+    const p   = n => String(n).padStart(2,'0');
+    const time = `${p(sgt.getUTCHours())}:${p(sgt.getUTCMinutes())}:${p(sgt.getUTCSeconds())}`;
+    const mins = Math.round((Date.now() - t) / 60000);
+    const ago  = mins < 1 ? 'just now' : mins < 60 ? `${mins}m ago` : `${Math.floor(mins/60)}h ${mins%60}m ago`;
+    el.innerHTML = `Last scan: <span style="font-family:'DM Mono',monospace;color:var(--text)">${time} SGT</span> <span style="color:var(--text-muted)">(${ago})</span>`;
+  } else {
+    el.textContent = scanDate ? `Scanned ${scanDate}` : 'Auto-runs 6pm SGT';
+  }
+}
+
+async function refreshFreshness() {
+  if (!_scanData) return;
+  updateScanHeader(_scanData.generated_at, _scanData.scan_date);
+  const tickers = [...(_scanData.swing||[]), ...(_scanData.long_term||[])]
+    .map(r => r.ticker).filter(Boolean);
+  if (!tickers.length) return;
+  const d = await api(`/api/scan/freshness?tickers=${tickers.join(',')}`);
+  if (!d) return;
+  _prices = d.prices || {};
+  renderList('swingList', _scanData.swing,     'SWING',     _prices);
+  renderList('ltList',    _scanData.long_term, 'LONG-TERM', _prices);
+}
 
 async function loadResults() {
   const d = await api('/api/scan/results');
   if (!d) return;
-
-  document.getElementById('scanDate').textContent =
-    d.scan_date ? 'Scanned ' + d.scan_date : 'Auto-runs 6pm SGT';
+  _scanData = d;
+  updateScanHeader(d.generated_at, d.scan_date);
   document.getElementById('swingCount').textContent = d.swing.length;
-  document.getElementById('ltCount').textContent = d.long_term.length;
-
-  renderList('swingList', d.swing, 'SWING');
-  renderList('ltList', d.long_term, 'LONG-TERM');
+  document.getElementById('ltCount').textContent    = d.long_term.length;
+  renderList('swingList', d.swing,     'SWING',     _prices);
+  renderList('ltList',    d.long_term, 'LONG-TERM', _prices);
+  if (d.swing.length || d.long_term.length) {
+    await refreshFreshness();
+    if (!_freshTimer) _freshTimer = setInterval(refreshFreshness, 60000);
+  }
 }
 
-function renderList(elId, items, mode) {
+function renderList(elId, items, mode, prices) {
+  prices = prices || {};
   const el = document.getElementById(elId);
   if (!items || !items.length) {
     el.innerHTML = '<div class="empty-state"><div class="icon">' +
@@ -213,14 +305,23 @@ function renderList(elId, items, mode) {
       ? '<span style="background:rgba(249,115,22,.15);color:var(--orange);font-size:9px;padding:2px 5px;border-radius:3px;font-weight:700">PRIORITY</span>'
       : '';
 
-    return `<a href="/analyse?ticker=${s.ticker}" class="scan-card">
+    // Freshness
+    const currPx    = (s.ticker in prices) ? prices[s.ticker] : undefined;
+    const freshness = getFreshnessState(s.first_seen, s.generated_at, currPx, s.entry_ref_price || s.price);
+    const isStale   = freshness.state === 'STALE';
+    const freshBadge   = renderFreshnessBadge(freshness);
+    const staleBanner  = isStale
+      ? `<div class="stale-banner">⚠ EXPIRED — re-validate before acting</div>`
+      : '';
+
+    return `<a href="/analyse?ticker=${s.ticker}" class="scan-card${isStale?' stale-card':''}">
       <div class="score-ring ${vc}">${s.score}</div>
       <div class="scan-card-body">
         <div class="scan-row1">
           <span class="scan-ticker">${s.ticker}</span>
           <span class="badge badge-${vc}">${s.verdict||'—'}</span>
           <span class="badge badge-${mode==='SWING'?'swing':'lt'}">${mode}</span>
-          ${uwBadge}${priorityBadge}
+          ${uwBadge}${priorityBadge}${freshBadge}
         </div>
         <div class="scan-price-line">
           $${fmt(s.price,2)}
@@ -232,6 +333,7 @@ function renderList(elId, items, mode) {
         <div class="scan-uw ${uwStr?'has-uw':''}">${uwStr || 'No UW data'}</div>
         ${analystStr ? `<div style="margin-top:3px">📊 Analyst: ${analystStr}</div>` : ''}
         <div class="mini-bars">${bars}</div>
+        ${staleBanner}
       </div>
     </a>`;
   }).join('');
