@@ -154,6 +154,7 @@ def _batch_quick_scan(universe):
     all_data = {}
     batch_size = 100
     batches = [universe[i:i + batch_size] for i in range(0, len(universe), batch_size)]
+    done_count = 0
 
     for batch in batches:
         try:
@@ -162,6 +163,8 @@ def _batch_quick_scan(universe):
                 auto_adjust=True, progress=False, threads=True,
             )
             if raw.empty:
+                done_count += len(batch)
+                _scan_progress["done"] = done_count
                 continue
             multi = len(batch) > 1
             for ticker in batch:
@@ -178,6 +181,8 @@ def _batch_quick_scan(universe):
                     pass
         except Exception as e:
             print(f"Batch download error: {e}")
+        done_count += len(batch)
+        _scan_progress["done"] = done_count
 
     results = []
     for ticker in universe:
