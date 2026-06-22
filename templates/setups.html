@@ -126,7 +126,7 @@ async function load(force=false){
   const RO=document.getElementById('riskOff'), btn=document.getElementById('refreshBtn');
   L.style.display=''; E.style.display='none'; R.innerHTML=''; SK.textContent=''; RO.style.display='none'; btn.disabled=true;
   try{
-    const d = await api('/api/setups'+(force?'?force=1':''));
+    const d = await api('/api/setups'+(force?'?force=1':''), {cache:'no-store'});
     if(!d) return;
     if(d.regime==='RISK_OFF') RO.style.display='';
     const ts = d.timestamp ? new Date(d.timestamp).toLocaleTimeString('en-SG',{hour:'2-digit',minute:'2-digit'}) : '—';

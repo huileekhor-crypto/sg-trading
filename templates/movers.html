@@ -210,7 +210,7 @@ async function load(force=false){
   L.style.display=''; E.style.display='none'; TC.style.display='none'; TW.style.display='none';
   SC.style.display='none'; PC.style.display='none'; RO.style.display='none'; btn.disabled=true;
   try{
-    const d = await api('/api/movers'+(force?'?force=1':''));
+    const d = await api('/api/movers'+(force?'?force=1':''), {cache:'no-store'});
     if(!d) return;
     if(d.error){ E.style.display=''; document.getElementById('emptyMsg').textContent=d.error; return; }
     if(d.regime==='RISK_OFF') RO.style.display='';
