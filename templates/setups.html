@@ -1,0 +1,145 @@
+{% extends "base.html" %}
+{% block title %}Setups — SG Trading{% endblock %}
+
+{% block extra_css %}
+<style>
+.setups-copy { background: var(--bg2); border: 1px solid var(--border); border-left: 3px solid var(--blue);
+  border-radius: 8px; padding: 10px 14px; font-size: 12px; line-height: 1.5; color: var(--text-dim); margin-bottom: 14px; }
+.risk-off-banner { background: rgba(239,68,68,.1); border: 1px solid rgba(239,68,68,.25); border-radius: 8px;
+  padding: 10px 14px; font-size: 12px; font-weight: 600; color: var(--red); margin-bottom: 14px; }
+.refresh-row { display:flex; align-items:center; justify-content:space-between; margin-bottom:14px; flex-wrap:wrap; gap:8px; }
+.scan-meta { font-size:11px; color:var(--text-muted); font-family:'DM Mono', monospace; }
+.setup-card { background: var(--bg2); border: 1px solid var(--border); border-left: 3px solid var(--green);
+  border-radius: 10px; padding: 14px; margin-bottom: 10px; }
+.setup-card.flagged { border-left-color: var(--yellow); }
+.card-top { display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; }
+.card-ticker { font-family:'DM Mono', monospace; font-size:20px; font-weight:800; }
+.card-price { font-family:'DM Mono', monospace; font-size:15px; font-weight:700; color:var(--text-dim); }
+.score-chip { font-family:'DM Mono', monospace; font-size:20px; font-weight:700; width:46px; height:46px;
+  border-radius:50%; display:flex; align-items:center; justify-content:center; flex-shrink:0;
+  border:2px solid var(--green); color:var(--green); background:rgba(34,197,94,.08); }
+.tag-pill { display:inline-flex; padding:3px 8px; border-radius:5px; font-size:10px; font-weight:800;
+  letter-spacing:.05em; text-transform:uppercase; background:rgba(59,130,246,.14); color:var(--blue); }
+.metric-chip { background:var(--bg3); border:1px solid var(--border); border-radius:6px; padding:4px 8px;
+  font-size:11px; font-weight:600; color:var(--text-dim); white-space:nowrap; }
+.metric-chip span { font-family:'DM Mono', monospace; font-weight:700; color:var(--text); }
+.metric-chip.warn { border-color:rgba(234,179,8,.4); }
+.metric-chip.warn span { color:var(--yellow); }
+.metrics-row { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:8px; }
+.plan-row { display:flex; gap:8px; flex-wrap:wrap; font-size:11px; color:var(--text-muted);
+  padding-top:8px; border-top:1px solid var(--border); }
+.plan-row b { font-family:'DM Mono', monospace; color:var(--text); font-weight:700; }
+.why-text { font-size:11px; color:var(--text-dim); line-height:1.4; margin-top:8px; }
+.flag-line { font-size:11px; color:var(--yellow); margin-top:6px; font-weight:600; }
+.analyse-link { color:var(--orange); text-decoration:none; font-weight:700; font-size:11px; white-space:nowrap; }
+.analyse-link:hover { text-decoration:underline; }
+.skip-note { font-size:10px; color:var(--text-muted); font-family:'DM Mono', monospace; margin-top:14px; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div style="max-width:680px;margin:0 auto">
+
+  <div style="margin-bottom:12px">
+    <div style="font-size:20px;font-weight:800;margin-bottom:2px">🎯 Setups</div>
+    <div style="font-size:12px;color:var(--text-muted)">The early list — strong stocks resting before a potential move</div>
+  </div>
+
+  <div class="setups-copy">
+    <b>The early list.</b> These are strong stocks RESTING — pulling back or coiling before a potential
+    next move. The goal is to set an alert and WAIT for confirmation, not buy immediately.
+  </div>
+
+  <div class="refresh-row">
+    <div id="meta" class="scan-meta">—</div>
+    <button class="btn btn-ghost btn-sm" onclick="load(true)" id="refreshBtn">↻ Refresh</button>
+  </div>
+
+  <div id="riskOff" class="risk-off-banner" style="display:none">
+    ⚠ Risk-off — pullbacks may keep falling; wait for stabilization before treating these as entries.
+  </div>
+
+  <div id="loading" style="display:none;text-align:center;padding:48px">
+    <div class="spin" style="width:32px;height:32px;border-width:3px"></div>
+    <div style="margin-top:12px;color:var(--text-muted);font-size:13px">Scanning structure for resting setups…</div>
+  </div>
+
+  <div id="empty" style="display:none" class="empty-state">
+    <div class="icon">🪤</div>
+    <div class="msg" id="emptyMsg">No resting setups right now</div>
+  </div>
+
+  <div id="results"></div>
+  <div id="skipped" class="skip-note"></div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function card(s){
+  const flagged = s.flags && s.flags.length;
+  const ivWarn = s.iv_rank > 80 ? 'warn' : '';
+  const ed = s.earnings_days;
+  const edWarn = (ed != null && ed <= 7) ? 'warn' : '';
+  return `
+  <div class="setup-card ${flagged?'flagged':''}">
+    <div class="card-top">
+      <div style="display:flex;align-items:center;gap:10px">
+        <div class="score-chip">${s.score}</div>
+        <div>
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+            <span class="card-ticker">${s.ticker}</span>
+            <span class="tag-pill">${s.setup_label}</span>
+            ${s.sector?`<span style="font-size:10px;color:var(--text-muted)">${s.sector}</span>`:''}
+          </div>
+          <div style="margin-top:3px"><span class="card-price">$${fmt(s.price)}</span>
+            <span style="font-size:11px;color:var(--text-muted)"> · ${s.pct_from_high}% below 52w high</span></div>
+        </div>
+      </div>
+      <a class="analyse-link" href="/analyse?ticker=${s.ticker}">→ Analyse</a>
+    </div>
+
+    <div class="metrics-row">
+      <div class="metric-chip">vs 20d <span>${s.dist20>0?'+':''}${s.dist20}%</span></div>
+      <div class="metric-chip">vs 50d <span>${s.dist50>0?'+':''}${s.dist50}%</span></div>
+      <div class="metric-chip">RSI <span>${s.rsi}</span></div>
+      <div class="metric-chip">ATR <span>$${fmt(s.atr)} (${s.atr_pct}%)</span></div>
+      <div class="metric-chip ${ivWarn}">IV rank <span>${s.iv_rank?s.iv_rank.toFixed(0):'—'}</span></div>
+      <div class="metric-chip ${edWarn}">Earnings <span>${ed!=null?ed+'d':'—'}</span></div>
+    </div>
+
+    <div class="plan-row">
+      <span>Entry <b>$${fmt(s.entry)}</b> <span style="color:var(--text-muted)">(${s.support_lbl})</span></span>
+      <span>Stop <b>$${fmt(s.stop)}</b></span>
+      <span>Target <b>$${fmt(s.target)}</b></span>
+      <span style="color:${s.rr_ok?'var(--green)':'var(--red)'}">R/R <b style="color:inherit">${s.rr}×</b></span>
+    </div>
+
+    <div class="why-text">${s.why||''}</div>
+    ${flagged?`<div class="flag-line">⚠ ${s.flags.join(' · ')}</div>`:''}
+  </div>`;
+}
+
+async function load(force=false){
+  const L=document.getElementById('loading'), E=document.getElementById('empty');
+  const R=document.getElementById('results'), SK=document.getElementById('skipped');
+  const RO=document.getElementById('riskOff'), btn=document.getElementById('refreshBtn');
+  L.style.display=''; E.style.display='none'; R.innerHTML=''; SK.textContent=''; RO.style.display='none'; btn.disabled=true;
+  try{
+    const d = await api('/api/setups'+(force?'?force=1':''));
+    if(!d) return;
+    if(d.regime==='RISK_OFF') RO.style.display='';
+    const ts = d.timestamp ? new Date(d.timestamp).toLocaleTimeString('en-SG',{hour:'2-digit',minute:'2-digit'}) : '—';
+    document.getElementById('meta').textContent = `${d.found} setups / ${d.scanned} scanned · ${d.regime} · ${ts} SGT · cache 10min`;
+    const setups = d.setups||[];
+    if(!setups.length){ E.style.display=''; }
+    else { R.innerHTML = setups.map(card).join(''); }
+    if(d.skipped && d.skipped.length){
+      SK.textContent = 'Skipped (no data): ' + d.skipped.map(x=>`${x.ticker} (${x.reason})`).join(', ');
+    }
+  }catch(e){ E.style.display=''; document.getElementById('emptyMsg').textContent='Failed — '+e.message; }
+  finally{ L.style.display='none'; btn.disabled=false; }
+}
+load();
+</script>
+{% endblock %}

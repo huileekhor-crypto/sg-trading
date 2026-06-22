@@ -423,6 +423,55 @@ def uw_movers_screener(limit=None):
     return results
 
 
+def uw_iv_ranks(tickers):
+    """Batch IV-rank / sector / day-change for a list of tickers via ONE screener
+    call (ticker= accepts a comma list). Used as an optional secondary confirm on
+    the Setups tab — never as a candidate source. Returns {TICKER: {...}}."""
+    tickers = [t for t in tickers if t]
+    if not tickers:
+        return {}
+    data = uw_screener({'ticker': ','.join(tickers), 'limit': len(tickers) + 5})
+    out = {}
+    if not data:
+        return out
+    for item in data.get('data', []):
+        t = str(item.get('ticker', '')).upper()
+        if not t:
+            continue
+        out[t] = {
+            'iv_rank': round(_sf(item.get('iv_rank', 0)), 1),
+            'sector': item.get('sector', '') or '',
+            'perc_change': round(_sf(item.get('perc_change', 0)), 2),
+        }
+    return out
+
+
+def uw_days_to_earnings(ticker):
+    """Days until the next UNreported earnings date for ticker, or None if
+    unknown. Routed through the cached uw_ticker_earnings wrapper."""
+    import datetime
+    data = uw_ticker_earnings(ticker)
+    if not data:
+        return None
+    items = data.get('data', data if isinstance(data, list) else [])
+    today = datetime.date.today()
+    best = None
+    for item in items:
+        if item.get('reported_eps') is not None:
+            continue
+        ds = item.get('report_date', '') or item.get('date', '')
+        if not ds:
+            continue
+        try:
+            d = datetime.date.fromisoformat(ds[:10])
+        except Exception:
+            continue
+        days = (d - today).days
+        if days >= 0 and (best is None or days < best):
+            best = days
+    return best
+
+
 def uw_analysts(ticker):
     """Analyst ratings."""
     return _get("/api/screener/analysts", {"ticker": ticker}, endpoint_name="analysts")
