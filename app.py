@@ -47,14 +47,14 @@ def login_required(f):
 @app.route('/')
 def index():
     if 'user_id' in session:
-        return redirect('/scan')
+        return redirect('/movers')
     return render_template('login.html')
 
 
 @app.route('/dashboard')
 @login_required
 def dashboard():
-    return redirect('/scan')
+    return redirect('/movers')
 
 
 @app.before_request
