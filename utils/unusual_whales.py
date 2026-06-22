@@ -383,6 +383,46 @@ def uw_breakout_screener(preset='balanced'):
     return results
 
 
+# ─── Movers screener (Movers discovery tab) ──────────────────────────────────
+# Single source of truth for the Movers screener query — biggest % gainers today
+# among real companies. Routed through uw_screener() → rate-limit + cache apply.
+_MOVERS_SCREENER = {
+    'min_marketcap': '5000000000',    # $5B+ — no micro-cap noise
+    'issue_types': ['Common Stock'],  # no ETFs / indices / ADRs
+    'order': 'perc_change',
+    'order_direction': 'desc',
+    'limit': 20,
+}
+
+
+def uw_movers_screener(limit=None):
+    """
+    UW stock screener for the Movers tab: top % gainers today among $5B+ common
+    stock. Returns lightly-parsed dicts; technical enrichment (extension,
+    52w-high) is computed from candles in the route.
+    """
+    params = dict(_MOVERS_SCREENER)
+    if limit:
+        params['limit'] = limit
+    data = uw_screener(params)
+    if not data:
+        return []
+
+    results = []
+    for item in data.get('data', []):
+        ticker = str(item.get('ticker', '')).upper()
+        if not ticker or any(c.isdigit() for c in ticker) or ticker in _FLOW_EXCLUDE:
+            continue
+        results.append({
+            'ticker': ticker,
+            'perc_change': round(_sf(item.get('perc_change', 0)), 2),
+            'iv_rank': round(_sf(item.get('iv_rank', 0)), 1),
+            'sector': item.get('sector', '') or '',
+            'marketcap': _sf(item.get('marketcap', 0)),
+        })
+    return results
+
+
 def uw_analysts(ticker):
     """Analyst ratings."""
     return _get("/api/screener/analysts", {"ticker": ticker}, endpoint_name="analysts")

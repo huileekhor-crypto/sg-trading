@@ -8,6 +8,7 @@ from routes.manage import manage_bp
 from routes.journal import journal_bp
 from routes.backtest import backtest_bp
 from routes.breakout import breakout_bp
+from routes.movers import movers_bp
 from routes.settings import settings_bp
 from models.user import init_db
 from models.journal import init_journal_db
@@ -28,6 +29,7 @@ app.register_blueprint(manage_bp)
 app.register_blueprint(journal_bp)
 app.register_blueprint(backtest_bp)
 app.register_blueprint(breakout_bp)
+app.register_blueprint(movers_bp)
 app.register_blueprint(settings_bp)
 
 

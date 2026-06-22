@@ -1,0 +1,156 @@
+{% extends "base.html" %}
+{% block title %}Movers — SG Trading{% endblock %}
+
+{% block extra_css %}
+<style>
+.movers-copy {
+  background: var(--bg2); border: 1px solid var(--border); border-left: 3px solid var(--orange);
+  border-radius: 8px; padding: 10px 14px; font-size: 12px; line-height: 1.5;
+  color: var(--text-dim); margin-bottom: 14px;
+}
+.theme-card { background: var(--bg2); border: 1px solid var(--border); border-radius: 10px; padding: 16px; margin-bottom: 16px; }
+.theme-headline { font-size: 18px; font-weight: 800; letter-spacing: -0.01em; margin-bottom: 8px; color: var(--text); }
+.theme-counts { font-family: 'DM Mono', monospace; font-size: 12px; color: var(--text-dim); }
+.movers-table { width: 100%; border-collapse: collapse; }
+.movers-table th { font-size: 10px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
+  color: var(--text-muted); text-align: right; padding: 6px 8px; border-bottom: 1px solid var(--border); }
+.movers-table th:first-child { text-align: left; }
+.movers-table td { padding: 9px 8px; border-bottom: 1px solid var(--border); font-size: 12px; text-align: right; }
+.movers-table td:first-child { text-align: left; }
+.movers-table tr.state-WATCHABLE { background: rgba(34,197,94,.04); }
+.m-ticker { font-family: 'DM Mono', monospace; font-weight: 800; font-size: 14px; }
+.m-num { font-family: 'DM Mono', monospace; font-weight: 700; }
+.state-pill { display: inline-block; padding: 2px 7px; border-radius: 5px; font-size: 9px;
+  font-weight: 800; letter-spacing: .05em; text-transform: uppercase; }
+.state-green { background: rgba(34,197,94,.14); color: var(--green); }
+.state-red   { background: rgba(239,68,68,.14); color: var(--red); }
+.state-gray  { background: rgba(156,163,175,.12); color: #9ca3af; }
+.analyse-link { color: var(--orange); text-decoration: none; font-weight: 700; font-size: 11px; white-space: nowrap; }
+.analyse-link:hover { text-decoration: underline; }
+.flag-52w { color: var(--red); font-weight: 700; }
+.risk-off-banner { background: rgba(239,68,68,.1); border: 1px solid rgba(239,68,68,.25);
+  border-radius: 8px; padding: 10px 14px; font-size: 12px; font-weight: 600; color: var(--red); margin-bottom: 14px; }
+.refresh-row { display:flex; align-items:center; justify-content:space-between; margin-bottom:14px; flex-wrap:wrap; gap:8px; }
+.scan-meta { font-size:11px; color:var(--text-muted); font-family:'DM Mono', monospace; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div style="max-width:760px;margin:0 auto">
+
+  <div style="margin-bottom:12px">
+    <div style="font-size:20px;font-weight:800;margin-bottom:2px">🚀 Movers</div>
+    <div style="font-size:12px;color:var(--text-muted)">What's moving today &amp; what the theme is — discovery, not a buy list</div>
+  </div>
+
+  <div class="movers-copy">
+    <b>Discovery only.</b> Everything here already moved today. This tells you the THEME and what to
+    WATCH for a pullback — it is not a buy list. A name earns a trade by passing Analyse.
+  </div>
+
+  <div class="refresh-row">
+    <div id="meta" class="scan-meta">—</div>
+    <button class="btn btn-ghost btn-sm" onclick="load(true)" id="refreshBtn">↻ Refresh</button>
+  </div>
+
+  <div id="riskOff" class="risk-off-banner" style="display:none">
+    ⚠ Risk-off — these are likely sharp counter-trend pops, not durable trends.
+  </div>
+
+  <div id="loading" style="display:none;text-align:center;padding:48px">
+    <div class="spin" style="width:32px;height:32px;border-width:3px"></div>
+    <div style="margin-top:12px;color:var(--text-muted);font-size:13px">Pulling movers + computing extension…</div>
+  </div>
+
+  <div id="empty" style="display:none" class="empty-state">
+    <div class="icon">📭</div>
+    <div class="msg" id="emptyMsg">No movers found</div>
+  </div>
+
+  <!-- SECTION 1: Theme summary -->
+  <div id="themeCard" class="theme-card" style="display:none">
+    <div class="card-title">Theme</div>
+    <div id="themeHeadline" class="theme-headline"></div>
+    <div id="themeCounts" class="theme-counts"></div>
+  </div>
+
+  <!-- SECTION 2: Movers table -->
+  <div id="tableWrap" style="display:none">
+    <div class="section-header"><div class="section-title">The Movers</div></div>
+    <div style="overflow-x:auto">
+      <table class="movers-table">
+        <thead>
+          <tr>
+            <th>Ticker</th><th>% Day</th><th>Ext vs 20d</th><th>IV Rank</th>
+            <th>52w</th><th>Sector</th><th>State</th><th></th>
+          </tr>
+        </thead>
+        <tbody id="moversBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function chgColor(v){ return v>0?'var(--green)':v<0?'var(--red)':'var(--text-muted)'; }
+function pillCls(c){ return c==='green'?'state-green':c==='red'?'state-red':'state-gray'; }
+
+function row(m){
+  const chg = (m.perc_change>=0?'+':'') + m.perc_change.toFixed(1) + '%';
+  const ext = (m.extension_pct>=0?'+':'') + m.extension_pct.toFixed(1) + '%';
+  const extC = m.extension_pct > 8 ? 'var(--red)' : (m.extension_pct <= 5 ? 'var(--green)' : 'var(--text-dim)');
+  const rising = m.ema20_rising ? '↗' : '↘';
+  const flag52 = m.near_52w_high
+    ? `<span class="flag-52w">● ${m.pct_from_high.toFixed(1)}%</span>`
+    : `<span style="color:var(--text-muted)">${m.pct_from_high.toFixed(1)}%</span>`;
+  return `
+  <tr class="state-${m.state}">
+    <td><span class="m-ticker">${m.ticker}</span></td>
+    <td class="m-num" style="color:${chgColor(m.perc_change)}">${chg}</td>
+    <td class="m-num" style="color:${extC}">${ext} <span style="color:var(--text-muted)">${rising}</span></td>
+    <td class="m-num">${m.iv_rank.toFixed(0)}</td>
+    <td>${flag52}</td>
+    <td style="color:var(--text-dim);font-size:11px">${m.sector||'—'}</td>
+    <td><span class="state-pill ${pillCls(m.state_color)}">${m.state_label}</span></td>
+    <td><a class="analyse-link" href="/analyse?ticker=${m.ticker}">→ Analyse</a></td>
+  </tr>`;
+}
+
+async function load(force=false){
+  const L=document.getElementById('loading'), E=document.getElementById('empty');
+  const TC=document.getElementById('themeCard'), TW=document.getElementById('tableWrap');
+  const RO=document.getElementById('riskOff'), btn=document.getElementById('refreshBtn');
+  L.style.display=''; E.style.display='none'; TC.style.display='none'; TW.style.display='none'; RO.style.display='none';
+  btn.disabled=true;
+  try{
+    const d = await api('/api/movers'+(force?'?force=1':''));
+    if(!d) return;
+    if(d.error){ E.style.display=''; document.getElementById('emptyMsg').textContent=d.error; return; }
+
+    if(d.regime==='RISK_OFF') RO.style.display='';
+
+    const ts = d.timestamp ? new Date(d.timestamp).toLocaleTimeString('en-SG',{hour:'2-digit',minute:'2-digit'}) : '—';
+    document.getElementById('meta').textContent = `${d.count} movers · ${d.regime} · ${ts} SGT · cache 5min`;
+
+    const movers = d.movers||[];
+    if(!movers.length){ E.style.display=''; document.getElementById('emptyMsg').textContent='No movers found'; return; }
+
+    if(d.theme){
+      document.getElementById('themeHeadline').textContent = d.theme.headline;
+      document.getElementById('themeCounts').textContent = d.theme.counts_str;
+      TC.style.display='';
+    }
+    document.getElementById('moversBody').innerHTML = movers.map(row).join('');
+    TW.style.display='';
+  }catch(e){
+    E.style.display=''; document.getElementById('emptyMsg').textContent='Failed — '+e.message;
+  }finally{
+    L.style.display='none'; btn.disabled=false;
+  }
+}
+load();
+</script>
+{% endblock %}
