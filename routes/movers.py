@@ -3,7 +3,8 @@ from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor
 from collections import Counter
 
-from utils.unusual_whales import uw_movers_screener, get_market_regime
+from utils.unusual_whales import (uw_movers_screener, get_market_regime,
+                                  get_sector_flow, get_top_flow)
 # Reuse breakout's candle fetch + EMA for extension/52w-high — no new data deps.
 from routes.breakout import _get_candles, _ema
 
@@ -108,6 +109,9 @@ def _enrich(m):
         return None
     closes, highs = candles['c'], candles['h']
     price = closes[-1]
+    prev = closes[-2] if len(closes) > 1 else price
+    # Gainers already carry screener perc_change; flow rows get a candle-derived one.
+    m.setdefault('perc_change', round((price - prev) / prev * 100, 2) if prev else 0.0)
 
     ema20 = _ema(closes, 20)
     if not ema20:
@@ -151,6 +155,35 @@ def _theme_summary(movers):
             'groups': [{'sector': s, 'count': c} for s, c in counts.most_common()]}
 
 
+def _sector_read(sector_flow):
+    """One-line rotation read from the sector strip, e.g.
+    'Leadership: Technology + Energy · Laggards: Healthcare'."""
+    rows = [s for s in (sector_flow or []) if s.get('ticker') != 'SPY']
+    rows.sort(key=lambda s: s.get('chg_pct', 0), reverse=True)
+    leaders = [s['name'] for s in rows if s.get('chg_pct', 0) > 0.3][:2]
+    laggards = [s['name'] for s in rows if s.get('chg_pct', 0) < -0.3][-2:]
+    parts = []
+    if leaders:
+        parts.append('Leadership: ' + ' + '.join(leaders))
+    if laggards:
+        parts.append('Laggards: ' + ', '.join(reversed(laggards)))
+    return ' · '.join(parts) or 'Sectors mixed — no clear leadership today'
+
+
+def _enrich_flow(item):
+    """Apply Movers' extension/state tagging to a performance-flow row so it
+    never reads as a buy-list. Falls back to NEUTRAL if candles are unavailable
+    (the row is still shown — flow data is independent of candles)."""
+    enriched = _enrich(dict(item))
+    if enriched:
+        return enriched
+    item = dict(item)
+    item.update({'extension_pct': None, 'ema20_rising': False, 'pct_from_high': None,
+                 'near_52w_high': False, 'state': 'NEUTRAL', 'state_label': 'NEUTRAL',
+                 'state_color': 'gray', '_rank': 1})
+    return item
+
+
 @movers_bp.route('/movers')
 def movers_page():
     return render_template('movers.html', active='movers')
@@ -164,20 +197,35 @@ def api_movers():
     if cached and not force and (now - cached['ts']).total_seconds() < MOVERS_CONFIG['CACHE_TTL']:
         return jsonify(cached['data'])
 
-    raw = uw_movers_screener(MOVERS_CONFIG['SCREENER_LIMIT'])
-    if not raw:
-        return jsonify({'error': 'UW screener unavailable — check API key',
-                        'movers': [], 'theme': None})
-
     reg = _tide_regime()
 
+    # ── Section 3: top % gainers (existing) ──────────────────────────────────
+    raw = uw_movers_screener(MOVERS_CONFIG['SCREENER_LIMIT'])
     with ThreadPoolExecutor(max_workers=6) as ex:
-        enriched = [m for m in ex.map(_enrich, raw) if m]
-
+        enriched = [m for m in ex.map(_enrich, raw) if m] if raw else []
     enriched.sort(key=lambda m: (m['_rank'], m['extension_pct']))
     theme = _theme_summary(enriched)
 
+    # ── Sections 1+2: relocated from Scan (same cached UW functions) ─────────
+    try:
+        sector_flow = get_sector_flow()
+    except Exception:
+        sector_flow = []
+    try:
+        perf_raw = get_top_flow(limit=15)
+    except Exception:
+        perf_raw = []
+    with ThreadPoolExecutor(max_workers=6) as ex:
+        perf_flow = list(ex.map(_enrich_flow, perf_raw)) if perf_raw else []
+
+    if not enriched and not sector_flow and not perf_flow:
+        return jsonify({'error': 'UW data unavailable — check API key', 'movers': [],
+                        'theme': None, 'sector_flow': [], 'perf_flow': [], 'sector_read': ''})
+
     payload = {
+        'sector_flow': sector_flow,
+        'sector_read': _sector_read(sector_flow),
+        'perf_flow': perf_flow,
         'movers': enriched,
         'theme': theme,
         'regime': reg['regime'],            # RISK_OFF / RISK_ON / NEUTRAL (smoothed)

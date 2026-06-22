@@ -32,6 +32,23 @@
   border-radius: 8px; padding: 10px 14px; font-size: 12px; font-weight: 600; color: var(--red); margin-bottom: 14px; }
 .refresh-row { display:flex; align-items:center; justify-content:space-between; margin-bottom:14px; flex-wrap:wrap; gap:8px; }
 .scan-meta { font-size:11px; color:var(--text-muted); font-family:'DM Mono', monospace; }
+.sector-read { font-size:13px; font-weight:700; margin-bottom:10px; color:var(--text); }
+.sector-chip { display:inline-flex; flex-direction:column; gap:2px; padding:7px 10px;
+  border-radius:8px; border:1px solid; min-width:90px; }
+.sector-chip.bull { background:rgba(34,197,94,.07); border-color:rgba(34,197,94,.25); }
+.sector-chip.bear { background:rgba(239,68,68,.07); border-color:rgba(239,68,68,.25); }
+.sector-chip.neut { background:var(--bg3); border-color:var(--border); }
+.sector-name { font-size:10px; font-weight:700; letter-spacing:.04em; }
+.sector-etf  { font-size:9px; color:var(--text-muted); }
+.sector-stat { font-size:10px; font-family:'DM Mono',monospace; font-weight:700; }
+.sector-flow { font-size:9px; color:var(--text-muted); margin-top:1px; }
+.flow-row { display:flex; align-items:center; gap:10px; padding:8px 0;
+  border-bottom:1px solid var(--border); text-decoration:none; color:var(--text); }
+.flow-row:hover { background:rgba(255,255,255,.02); border-radius:4px; }
+.flow-ticker { font-family:'DM Mono',monospace; font-size:14px; font-weight:800; width:56px; flex-shrink:0; }
+.flow-bar-wrap { flex:1; background:var(--bg4); border-radius:3px; height:6px; overflow:hidden; }
+.flow-bar-fill { height:100%; border-radius:3px; }
+.flow-meta { font-size:10px; color:var(--text-muted); white-space:nowrap; }
 </style>
 {% endblock %}
 
@@ -55,6 +72,21 @@
 
   <div id="riskOff" class="risk-off-banner" style="display:none">
     ⚠ Risk-off — these are likely sharp counter-trend pops, not durable trends.
+  </div>
+
+  <!-- SECTION 1: Sector Flow strip + auto-read -->
+  <div id="sectorCard" class="card" style="display:none;margin-bottom:14px">
+    <div class="card-title">📊 Sector Flow</div>
+    <div id="sectorRead" class="sector-read"></div>
+    <div id="sectorGrid" style="display:flex;flex-wrap:wrap;gap:6px"></div>
+    <div style="font-size:9px;color:var(--text-muted);margin-top:8px">Price chg today · Bull% = bullish options premium · 5-day ETF share flow · sorted by performance</div>
+  </div>
+
+  <!-- SECTION 2: Performance Flow (chase-risk tagged) -->
+  <div id="perfCard" class="card" style="display:none;margin-bottom:14px">
+    <div class="card-title">🔥 Performance Flow — Unusual Options Activity</div>
+    <div id="perfList"></div>
+    <div style="font-size:9px;color:var(--text-muted);margin-top:8px">Call activity vs 30d avg × bull premium · tagged with the same chase-risk logic — context, not a buy list</div>
   </div>
 
   <div id="loading" style="display:none;text-align:center;padding:48px">
@@ -119,32 +151,89 @@ function row(m){
   </tr>`;
 }
 
+function renderSector(sectors, read){
+  const card=document.getElementById('sectorCard'), grid=document.getElementById('sectorGrid');
+  const rows=(sectors||[]).filter(s=>s.ticker!=='SPY').sort((a,b)=>b.chg_pct-a.chg_pct);
+  if(!rows.length){ card.style.display='none'; return; }
+  document.getElementById('sectorRead').textContent = read||'';
+  grid.innerHTML = rows.map(s=>{
+    const priceClr=s.chg_pct>0?'var(--green)':s.chg_pct<0?'var(--red)':'var(--text-muted)';
+    const fIcon=s.sentiment==='BULLISH'?'▲':s.sentiment==='BEARISH'?'▼':'–';
+    const fClr=s.sentiment==='BULLISH'?'var(--green)':s.sentiment==='BEARISH'?'var(--red)':'var(--text-muted)';
+    const cls=s.chg_pct>0.3?'bull':s.chg_pct<-0.3?'bear':'neut';
+    const fa=Math.abs(s.etf_flow_5d);
+    const fStr=fa>=1e6?((s.etf_flow_5d>=0?'+':'-')+(fa/1e6).toFixed(1)+'M'):fa>=1e3?((s.etf_flow_5d>=0?'+':'-')+(fa/1e3).toFixed(0)+'K'):'flat';
+    return `<div class="sector-chip ${cls}" title="${s.name} · Call% ${s.call_pct} · C/P ${s.cp_ratio} · 5d ${fStr}">
+      <div class="sector-name">${s.name}</div><div class="sector-etf">${s.ticker}</div>
+      <div class="sector-stat" style="color:${priceClr}">${s.chg_pct>0?'+':''}${s.chg_pct}%</div>
+      <div class="sector-flow" style="color:${fClr}">${fIcon} ${s.call_pct}% bull · ${fStr}</div>
+    </div>`;
+  }).join('');
+  card.style.display='';
+}
+
+function renderPerf(items){
+  const card=document.getElementById('perfCard'), list=document.getElementById('perfList');
+  if(!items||!items.length){ card.style.display='none'; return; }
+  list.innerHTML = items.map(s=>{
+    const isBull=s.sentiment&&s.sentiment.includes('BULL'), isBear=s.sentiment&&s.sentiment.includes('BEAR');
+    const sentClr=isBull?'var(--green)':isBear?'var(--red)':'var(--text-muted)';
+    const sentIcon=isBull?'▲':isBear?'▼':'–';
+    const barPct=Math.min(Math.round((s.call_vs30||0)/4*100),100);
+    const barClr=isBull?'var(--green)':isBear?'var(--red)':'var(--orange)';
+    const bullM=s.bull_prem>=1e9?(s.bull_prem/1e9).toFixed(1)+'B':(s.bull_prem/1e6).toFixed(0)+'M';
+    const pill=(s.extension_pct==null)?'':`<span class="state-pill ${pillCls(s.state_color)}" style="margin-left:6px">${s.state_label}</span>`;
+    const extStr=(s.extension_pct==null)?'':` · ext ${s.extension_pct>0?'+':''}${s.extension_pct}%`;
+    return `<a href="/analyse?ticker=${s.ticker}" class="flow-row">
+      <div class="flow-ticker" style="color:${sentClr}">${sentIcon} ${s.ticker}</div>
+      <div style="flex:1;min-width:0">
+        <div style="display:flex;align-items:center;gap:6px;margin-bottom:3px">
+          <div class="flow-bar-wrap"><div class="flow-bar-fill" style="width:${barPct}%;background:${barClr}"></div></div>
+          <span style="font-size:10px;font-weight:700;color:${barClr};white-space:nowrap">${s.call_vs30}× avg vol</span>${pill}
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          <span class="flow-meta" style="color:${sentClr}">${s.bull_pct}% bull · $${bullM}</span>
+          <span class="flow-meta">C/P ${s.pcr} · IV rank ${s.iv_rank}${extStr}</span>
+          ${s.sector?`<span style="font-size:9px;padding:1px 5px;border-radius:3px;background:var(--bg4);color:var(--text-muted)">${s.sector}</span>`:''}
+        </div>
+      </div>
+    </a>`;
+  }).join('');
+  card.style.display='';
+}
+
 async function load(force=false){
   const L=document.getElementById('loading'), E=document.getElementById('empty');
   const TC=document.getElementById('themeCard'), TW=document.getElementById('tableWrap');
+  const SC=document.getElementById('sectorCard'), PC=document.getElementById('perfCard');
   const RO=document.getElementById('riskOff'), btn=document.getElementById('refreshBtn');
-  L.style.display=''; E.style.display='none'; TC.style.display='none'; TW.style.display='none'; RO.style.display='none';
-  btn.disabled=true;
+  L.style.display=''; E.style.display='none'; TC.style.display='none'; TW.style.display='none';
+  SC.style.display='none'; PC.style.display='none'; RO.style.display='none'; btn.disabled=true;
   try{
     const d = await api('/api/movers'+(force?'?force=1':''));
     if(!d) return;
     if(d.error){ E.style.display=''; document.getElementById('emptyMsg').textContent=d.error; return; }
-
     if(d.regime==='RISK_OFF') RO.style.display='';
 
     const ts = d.timestamp ? new Date(d.timestamp).toLocaleTimeString('en-SG',{hour:'2-digit',minute:'2-digit'}) : '—';
     document.getElementById('meta').textContent = `${d.count} movers · ${d.regime} · ${ts} SGT · cache 5min`;
 
-    const movers = d.movers||[];
-    if(!movers.length){ E.style.display=''; document.getElementById('emptyMsg').textContent='No movers found'; return; }
+    renderSector(d.sector_flow, d.sector_read);
+    renderPerf(d.perf_flow);
 
-    if(d.theme){
-      document.getElementById('themeHeadline').textContent = d.theme.headline;
-      document.getElementById('themeCounts').textContent = d.theme.counts_str;
-      TC.style.display='';
+    const movers = d.movers||[];
+    if(movers.length){
+      if(d.theme){
+        document.getElementById('themeHeadline').textContent = d.theme.headline;
+        document.getElementById('themeCounts').textContent = d.theme.counts_str;
+        TC.style.display='';
+      }
+      document.getElementById('moversBody').innerHTML = movers.map(row).join('');
+      TW.style.display='';
     }
-    document.getElementById('moversBody').innerHTML = movers.map(row).join('');
-    TW.style.display='';
+    if(!movers.length && !(d.sector_flow||[]).length && !(d.perf_flow||[]).length){
+      E.style.display=''; document.getElementById('emptyMsg').textContent='No movers found';
+    }
   }catch(e){
     E.style.display=''; document.getElementById('emptyMsg').textContent='Failed — '+e.message;
   }finally{

@@ -69,26 +69,6 @@ def scan_progress():
     return jsonify(_scan_progress)
 
 
-@scanner_bp.route("/api/scan/sector-flow")
-def sector_flow():
-    from utils.unusual_whales import get_sector_flow
-    try:
-        sectors = get_sector_flow()
-    except Exception:
-        sectors = []
-    return jsonify({"sectors": sectors})
-
-
-@scanner_bp.route("/api/scan/top-flow")
-def top_flow():
-    from utils.unusual_whales import get_top_flow
-    try:
-        names = get_top_flow(limit=15)
-    except Exception:
-        names = []
-    return jsonify({"names": names})
-
-
 @scanner_bp.route("/api/market/regime")
 def market_regime():
     from utils.unusual_whales import get_market_regime
