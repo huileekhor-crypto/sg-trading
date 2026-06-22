@@ -413,9 +413,15 @@ def uw_movers_screener(limit=None):
         ticker = str(item.get('ticker', '')).upper()
         if not ticker or any(c.isdigit() for c in ticker) or ticker in _FLOW_EXCLUDE:
             continue
+        # The screener omits a ready-made perc_change field — derive today's %
+        # change from close vs prev_close (matches its perc_change-desc ordering).
+        pc = item.get('perc_change')
+        if pc is None or pc == '':
+            close, prev_close = _sf(item.get('close', 0)), _sf(item.get('prev_close', 0))
+            pc = ((close - prev_close) / prev_close * 100) if prev_close else 0.0
         results.append({
             'ticker': ticker,
-            'perc_change': round(_sf(item.get('perc_change', 0)), 2),
+            'perc_change': round(_sf(pc), 2),
             'iv_rank': round(_sf(item.get('iv_rank', 0)), 1),
             'sector': item.get('sector', '') or '',
             'marketcap': _sf(item.get('marketcap', 0)),
